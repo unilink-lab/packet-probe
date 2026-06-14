@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         self.table_model = PacketTableModel(self)
         self.table_view = QTableView(self)
         self.table_view.setModel(self.table_model)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.SectionResizeMode.Interactive)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table_view.setSelectionMode(QTableView.SelectionMode.SingleSelection)
