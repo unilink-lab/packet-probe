@@ -16,7 +16,7 @@ jobs:
       - name: Checkout unilink
         uses: actions/checkout@v4
         with:
-          repository: unilink-lab/unilink
+          repository: jwsung91/unilink
           path: unilink
 
       - name: Install dependencies
