@@ -2,39 +2,54 @@
 
 Packet Probe Viewer is an optional read-only viewer for Packet Probe event streams.
 
-The viewer is planned to subscribe to Packet Probe's UDS IPC stream and display
+The viewer subscribes to Packet Probe's UDS IPC stream and displays
 JSONL events in a table, hex view, and detail panel.
 
-## Status
+## Install
 
-The viewer is not implemented yet. This directory currently defines the planned
-packaging and dependency boundary.
+```sh
+cd viewer
+python -m pip install -e .
+```
 
-## License
+## Run
 
-The viewer source code is licensed under Apache-2.0.
+```sh
+packet-probe-viewer --socket /tmp/packet-probe.sock
+```
 
-The viewer depends on PySide6 / Qt for Python as an external runtime dependency.
-PySide6 and Qt are not vendored in this repository and are distributed under their
-own license terms.
+## Example with Packet Probe
 
-See:
+Terminal 1:
 
-- `LICENSE`
-- `THIRD_PARTY_NOTICES.md`
+```sh
+packet-probe udp \
+  --bind-host 127.0.0.1 \
+  --bind-port 19000 \
+  --ipc /tmp/packet-probe.sock \
+  --log udp.jsonl
+```
 
-## Planned features
+Terminal 2:
 
-- Connect to Packet Probe UDS IPC event stream
-- Display packet/event table
-- Show raw payload hex
-- Show event detail JSON
-- Pause/resume live updates
-- Reconnect to IPC socket
+```sh
+packet-probe-viewer --socket /tmp/packet-probe.sock
+```
 
-## Out of scope for initial viewer
+Terminal 3:
 
-- Sending commands to devices
-- Starting/stopping capture
-- Decoder plugin management
-- Replay editing
+```sh
+python3 - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.sendto(b"hello", ("127.0.0.1", 19000))
+PY
+```
+
+## Limitations
+
+- read-only viewer
+- no command send
+- no capture start/stop
+- no replay
+- Unix Domain Socket IPC only for now

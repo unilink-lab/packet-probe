@@ -31,7 +31,8 @@ written as JSONL for later viewer support.
 ## Current Limitations
 
 - No UDS capture mode yet
-- PySide6-based viewer is not implemented yet.
+- Viewer is read-only.
+- Viewer command send and capture control are not implemented yet.
 - No protocol-specific message decoder yet
 - No external decoder plugin system yet
 - No replay support yet
@@ -258,11 +259,10 @@ CLI helpers are internal implementation details.
 
 ## Viewer
 
-Packet Probe will provide an optional viewer under `viewer/`.
+Packet Probe includes an optional PySide6-based read-only viewer under `viewer/`.
 
-The core and CLI are licensed under Apache-2.0. The viewer source code is also
-licensed under Apache-2.0, but the viewer depends on PySide6 / Qt for Python as
-an external runtime dependency.
+The viewer connects to Packet Probe's UDS IPC event stream and displays packet
+events in a table with hex and JSON detail views.
 
 PySide6 and Qt are not vendored in this repository. See
 `viewer/THIRD_PARTY_NOTICES.md` for dependency license notes.
@@ -277,8 +277,3 @@ PySide6 and Qt are not vendored in this repository. See
 - [IPC Protocol](docs/ipc-protocol.md)
 - [IPC Event Stream Validation](docs/validation/ipc-event-stream.md)
 - [Validation Guides](docs/validation/)
-- [Roadmap](docs/roadmap.md)
-
-## Roadmap
-
-See [docs/roadmap.md](docs/roadmap.md).
