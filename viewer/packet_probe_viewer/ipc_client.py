@@ -21,6 +21,7 @@ class IpcClientWorker(QThread):
         try:
             self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self._socket.connect(self.socket_path)
+            self._socket.settimeout(0.5)
             self.status_changed.emit("connected")
         except Exception as e:
             self.error_occurred.emit(f"Connection failed: {e}")
@@ -51,6 +52,8 @@ class IpcClientWorker(QThread):
                             self.event_received.emit(obj)
                     except json.JSONDecodeError:
                         self.error_occurred.emit("Failed to decode JSON line")
+            except socket.timeout:
+                continue
             except Exception as e:
                 if self._running:
                     self.error_occurred.emit(f"Read error: {e}")
@@ -62,8 +65,17 @@ class IpcClientWorker(QThread):
 
     def stop(self):
         self._running = False
+        sock = self._socket
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        if self.isRunning():
+            self.wait(2000)
+
         self.cleanup()
-        self.wait()
 
     def cleanup(self):
         if self._socket:

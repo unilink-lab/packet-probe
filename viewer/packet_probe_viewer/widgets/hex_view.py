@@ -4,7 +4,22 @@ from PySide6.QtGui import QFont
 def format_hex_dump(hex_str: str) -> str:
     if not hex_str:
         return ""
-    clean_hex = "".join(c for c in hex_str if c.isalnum())
+    _HEX_CHARS = set("0123456789abcdefABCDEF")
+    
+    # Check for invalid characters (excluding common delimiters/whitespaces)
+    allowed_delimiters = set(" \t\n\r:-")
+    for c in hex_str:
+        if c not in _HEX_CHARS and c not in allowed_delimiters:
+            return f"Invalid hex payload: contains invalid character '{c}'"
+
+    clean_hex = "".join(c for c in hex_str if c in _HEX_CHARS)
+    if not clean_hex:
+        if not hex_str.strip():
+            return ""
+        return "Invalid hex payload: no hex characters"
+
+    if len(clean_hex) % 2 != 0:
+        return f"Invalid hex payload length: {len(clean_hex)}"
     bytes_list = [clean_hex[i:i+2] for i in range(0, len(clean_hex), 2)]
     
     lines = []

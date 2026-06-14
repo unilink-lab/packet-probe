@@ -264,6 +264,8 @@ Packet Probe includes an optional PySide6-based read-only viewer under `viewer/`
 The viewer connects to Packet Probe's UDS IPC event stream and displays packet
 events in a table with hex and JSON detail views.
 
+See [viewer/README.md](viewer/README.md) for viewer installation and usage.
+
 PySide6 and Qt are not vendored in this repository. See
 `viewer/THIRD_PARTY_NOTICES.md` for dependency license notes.
 

@@ -53,6 +53,9 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(ctrl_layout)
 
+        self.message_label = QLabel("", self)
+        main_layout.addWidget(self.message_label)
+
         main_splitter = QSplitter(Qt.Orientation.Vertical, self)
         main_layout.addWidget(main_splitter)
 
@@ -90,6 +93,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Socket path is empty.")
             return
 
+        # Synchronously update UI controls to connecting state to prevent duplicate clicks
+        self.connect_btn.setEnabled(False)
+        self.connect_btn.setText("Connecting...")
+        self.socket_path_edit.setEnabled(False)
+        self.message_label.setText("")
+
         self.worker = IpcClientWorker(socket_path, self)
         self.worker.status_changed.connect(self.on_status_changed)
         self.worker.error_occurred.connect(self.on_error_occurred)
@@ -105,16 +114,29 @@ class MainWindow(QMainWindow):
 
     def on_status_changed(self, status: str):
         self.status_label.setText(f"Status: {status}")
-        if status == "connected":
+        if status == "connecting":
+            self.connect_btn.setEnabled(False)
+            self.connect_btn.setText("Connecting...")
+            self.message_label.setText("")
+        elif status == "connected":
+            self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Disconnect")
+            self.socket_path_edit.setEnabled(False)
         elif status == "disconnected":
+            self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Connect")
+            self.socket_path_edit.setEnabled(True)
 
     def on_error_occurred(self, error_msg: str):
-        print(f"IPC Error: {error_msg}")
+        self.message_label.setText(f"Error: {error_msg}")
 
     def on_metadata_received(self, metadata: dict):
-        print(f"Metadata received: {metadata}")
+        schema = metadata.get("schema", "")
+        event_schema = metadata.get("event_schema", "")
+        version = metadata.get("version", "")
+        self.message_label.setText(
+            f"Metadata: schema={schema}, event_schema={event_schema}, version={version}"
+        )
 
     def on_event_received(self, event_dict: dict):
         event = PacketEvent(event_dict)

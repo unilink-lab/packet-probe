@@ -18,6 +18,14 @@ python -m pip install -e .
 packet-probe-viewer --socket /tmp/packet-probe.sock
 ```
 
+## Test
+
+```sh
+cd viewer
+python -m pip install -e ".[test]"
+python -m pytest
+```
+
 ## Example with Packet Probe
 
 Terminal 1:
@@ -53,3 +61,5 @@ PY
 - no capture start/stop
 - no replay
 - Unix Domain Socket IPC only for now
+- viewer currently keeps events in memory
+- very large captures should be recorded as JSONL and analyzed separately

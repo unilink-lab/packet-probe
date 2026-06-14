@@ -23,3 +23,7 @@ packet-probe-viewer = "packet_probe_viewer.main:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["packet_probe_viewer*"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

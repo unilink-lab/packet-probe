@@ -50,3 +50,10 @@ PY
 * Event table shows a `device_to_app` raw_bytes event.
 * Selecting the row shows payload hex.
 * Event detail panel shows raw JSON.
+
+## Additional checks
+
+- Start the viewer before Packet Probe and click Connect. The viewer should show a connection error and remain usable.
+- Start Packet Probe, connect the viewer, then stop Packet Probe. The viewer should switch to disconnected state.
+- Click Pause, send datagrams, then click Resume. Buffered events should appear.
+- Click Clear. The table, hex view, and detail view should be cleared.
