@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-    QLabel, QTableView, QSplitter, QHeaderView, QMessageBox
+    QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex
 from .ipc_client import IpcClientWorker
@@ -9,6 +9,16 @@ from .event_model import PacketEvent
 from .packet_table_model import PacketTableModel
 from .widgets.hex_view import HexView
 from .widgets.event_detail import EventDetailView
+from .jsonl_log_loader import load_packet_probe_jsonl
+
+def format_metadata_message(metadata: dict | None) -> str:
+    if not metadata:
+        return ""
+    schema = metadata.get("schema", "")
+    event_schema = metadata.get("event_schema", "")
+    version = metadata.get("version", "")
+    return f"Metadata: schema={schema}, event_schema={event_schema}, version={version}"
+
 
 class MainWindow(QMainWindow):
     def __init__(self, initial_socket_path: str = "/tmp/packet-probe.sock", parent=None):
@@ -51,7 +61,21 @@ class MainWindow(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_all)
         ctrl_layout.addWidget(self.clear_btn)
 
+        self.open_log_btn = QPushButton("Open Log", self)
+        self.open_log_btn.clicked.connect(self.open_log_file)
+        ctrl_layout.addWidget(self.open_log_btn)
+
         main_layout.addLayout(ctrl_layout)
+
+        # Menu bar
+        menu_bar = self.menuBar()
+        file_menu = menu_bar.addMenu("&File")
+        
+        open_action = file_menu.addAction("&Open Log...")
+        open_action.triggered.connect(self.open_log_file)
+        
+        exit_action = file_menu.addAction("E&xit")
+        exit_action.triggered.connect(self.close)
 
         self.message_label = QLabel("", self)
         main_layout.addWidget(self.message_label)
@@ -122,6 +146,8 @@ class MainWindow(QMainWindow):
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Disconnect")
             self.socket_path_edit.setEnabled(False)
+            self.clear_all()
+            self.message_label.setText("Live mode started")
         elif status == "disconnected":
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Connect")
@@ -131,12 +157,7 @@ class MainWindow(QMainWindow):
         self.message_label.setText(f"Error: {error_msg}")
 
     def on_metadata_received(self, metadata: dict):
-        schema = metadata.get("schema", "")
-        event_schema = metadata.get("event_schema", "")
-        version = metadata.get("version", "")
-        self.message_label.setText(
-            f"Metadata: schema={schema}, event_schema={event_schema}, version={version}"
-        )
+        self.message_label.setText(format_metadata_message(metadata))
 
     def on_event_received(self, event_dict: dict):
         event = PacketEvent(event_dict)
@@ -180,6 +201,48 @@ class MainWindow(QMainWindow):
         if event:
             self.hex_view.set_payload_hex(event.payload_hex)
             self.detail_view.set_event(event)
+
+    def open_log_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Packet Probe JSONL Log",
+            "",
+            "JSONL Files (*.jsonl);;All Files (*)",
+        )
+        if not path:
+            return
+
+        if self.worker and self.worker.isRunning():
+            self.disconnect_socket()
+
+        self.clear_all()
+
+        try:
+            result = load_packet_probe_jsonl(path)
+        except Exception as exc:
+            self.message_label.setText(f"Error loading log: {exc}")
+            return
+
+        events = [PacketEvent(e) for e in result.events]
+        self.table_model.set_events(events)
+
+        self.status_label.setText("Status: offline log")
+
+        meta_msg = format_metadata_message(result.metadata)
+        filename = os.path.basename(path)
+        count = len(result.events)
+        malformed_count = len(result.malformed_lines)
+
+        if malformed_count > 0:
+            first_malformed_num = result.malformed_lines[0][0]
+            msg = f"Loaded {count} events from {filename} with {malformed_count} malformed lines. First malformed line: {first_malformed_num}"
+        else:
+            msg = f"Loaded {count} events from {filename}"
+
+        if meta_msg:
+            self.message_label.setText(f"{meta_msg}\n{msg}")
+        else:
+            self.message_label.setText(msg)
 
     def closeEvent(self, event):
         self.disconnect_socket()

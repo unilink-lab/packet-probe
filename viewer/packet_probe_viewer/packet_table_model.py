@@ -60,6 +60,13 @@ class PacketTableModel(QAbstractTableModel):
         self.events.append(event)
         self.endInsertRows()
 
+    def set_events(self, events: list[PacketEvent]) -> None:
+        self.beginResetModel()
+        if len(events) > self.MAX_EVENTS:
+            events = events[-self.MAX_EVENTS:]
+        self.events = list(events)
+        self.endResetModel()
+
     def clear(self):
         self.beginResetModel()
         self.events.clear()

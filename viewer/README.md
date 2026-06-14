@@ -54,6 +54,25 @@ s.sendto(b"hello", ("127.0.0.1", 19000))
 PY
 ```
 
+## Open a JSONL log
+
+The viewer can open Packet Probe JSONL logs recorded with `--log`.
+
+```sh
+packet-probe udp \
+  --bind-host 127.0.0.1 \
+  --bind-port 19000 \
+  --log udp.jsonl
+```
+
+Then open `udp.jsonl` from the viewer using:
+
+```text
+File > Open Log...
+```
+
+or the `Open Log` button.
+
 ## Limitations
 
 - read-only viewer

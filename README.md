@@ -278,4 +278,5 @@ PySide6 and Qt are not vendored in this repository. See
 - [JSONL Format](docs/jsonl-format.md)
 - [IPC Protocol](docs/ipc-protocol.md)
 - [IPC Event Stream Validation](docs/validation/ipc-event-stream.md)
+- [Viewer JSONL Log Validation](docs/validation/viewer-jsonl-log.md)
 - [Validation Guides](docs/validation/)
