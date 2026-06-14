@@ -40,16 +40,25 @@ void TcpServerCaptureSession::start() {
   stopped_.store(false);
 
   impl_->server->on_connect([this](unilink::ConnectionContext const& ctx) {
+    bool has_active = false;
     {
       std::lock_guard<std::mutex> lock(impl_->state_mutex);
       if (impl_->active_client.has_value()) {
-        return;
+        has_active = true;
+      } else {
+        impl_->active_client = ctx.client_id();
+        impl_->client_info = ctx.client_info();
       }
-      impl_->active_client = ctx.client_id();
-      impl_->client_info = ctx.client_info();
     }
 
     auto local_ep = options_.listen_host + ":" + std::to_string(options_.listen_port);
+    if (has_active) {
+      auto summary = "ignored extra TCP client " + ctx.client_info();
+      emit(make_event(Direction::DeviceToApp, EventType::StateChange, {},
+                      ctx.client_info(), local_ep, std::move(summary)));
+      return;
+    }
+
     auto summary = "connected " + ctx.client_info();
     emit(make_event(Direction::DeviceToApp, EventType::StateChange, {},
                     ctx.client_info(), local_ep, std::move(summary)));
@@ -79,10 +88,12 @@ void TcpServerCaptureSession::start() {
 
   impl_->server->on_data([this](unilink::MessageContext const& ctx) {
     bool is_active = false;
+    std::string client_info;
     {
       std::lock_guard<std::mutex> lock(impl_->state_mutex);
       if (impl_->active_client.has_value() && impl_->active_client.value() == ctx.client_id()) {
         is_active = true;
+        client_info = impl_->client_info;
       }
     }
 
@@ -91,13 +102,14 @@ void TcpServerCaptureSession::start() {
       auto const size = payload.size();
       auto local_ep = options_.listen_host + ":" + std::to_string(options_.listen_port);
       emit(make_event(Direction::DeviceToApp, EventType::RawBytes, std::move(payload),
-                      ctx.client_info(), local_ep,
+                      client_info, local_ep,
                       "DEVICE -> APP " + std::to_string(size) + " bytes"));
     }
   });
 
   impl_->server->on_error([this](unilink::ErrorContext const& ctx) {
     std::string target_client_info;
+    bool is_active = false;
     {
       std::lock_guard<std::mutex> lock(impl_->state_mutex);
       if (ctx.client_id().has_value() && impl_->active_client.has_value() &&
@@ -105,13 +117,16 @@ void TcpServerCaptureSession::start() {
         target_client_info = impl_->client_info;
         impl_->active_client.reset();
         impl_->client_info.clear();
+        is_active = true;
       }
     }
 
-    auto local_ep = options_.listen_host + ":" + std::to_string(options_.listen_port);
-    emit(make_event(Direction::DeviceToApp, EventType::Error, {},
-                    target_client_info, local_ep, std::string(ctx.message())));
-    stopped_.store(true);
+    if (is_active) {
+      auto local_ep = options_.listen_host + ":" + std::to_string(options_.listen_port);
+      emit(make_event(Direction::DeviceToApp, EventType::Error, {},
+                      target_client_info, local_ep, std::string(ctx.message())));
+      stopped_.store(true);
+    }
   });
 
   auto started = impl_->server->start_sync();
@@ -134,18 +149,27 @@ void TcpServerCaptureSession::stop() {
 bool TcpServerCaptureSession::stopped() const { return stopped_.load(); }
 
 bool TcpServerCaptureSession::send(std::vector<std::uint8_t> payload) {
-  std::lock_guard<std::mutex> lock(impl_->state_mutex);
-  if (stopped_.load() || !impl_->active_client.has_value()) {
-    return false;
+  unilink::ClientId client_id;
+  std::string client_info;
+
+  {
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    if (stopped_.load() || !impl_->server || !impl_->active_client.has_value()) {
+      return false;
+    }
+
+    client_id = impl_->active_client.value();
+    client_info = impl_->client_info;
   }
 
   auto const size = payload.size();
   std::string_view data(reinterpret_cast<const char*>(payload.data()), size);
-  bool accepted = impl_->server->send_to(impl_->active_client.value(), data);
+  bool accepted = impl_->server->send_to(client_id, data);
+
   if (accepted) {
     auto local_ep = options_.listen_host + ":" + std::to_string(options_.listen_port);
     emit(make_event(Direction::AppToDevice, EventType::RawBytes, std::move(payload),
-                    local_ep, impl_->client_info,
+                    local_ep, client_info,
                     "APP -> DEVICE " + std::to_string(size) + " bytes"));
   }
   return accepted;

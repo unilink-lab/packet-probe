@@ -15,93 +15,28 @@ The core model records timestamp, direction, size, payload, transport, and sessi
 metadata as `PacketEvent` values. Events can be printed as one-line hex output and
 written as JSONL for later viewer support.
 
-## Scope
-
-MVP-1 includes:
-
-- TCP Direct Mode CLI
-- raw RX/TX byte events
-- StateChange and Error events
-- one-line hex output
-- JSONL recording
-- CTest-based unit tests for hex and JSONL behavior
-
-MVP-2 adds:
-
-- TCP Proxy Mode
-- bidirectional forwarding
-- app_to_device and device_to_app event directions
-- source and destination endpoint metadata
-- heuristic request/response latency events
-
-MVP-3 adds:
-
-- Serial Direct Mode
-- serial port configuration
-- serial RX/TX raw byte capture
-- serial JSONL recording
-- serial manual validation guidance
-
-MVP-4 adds:
-
-- UDP Direct Mode
-- UDP bind host and port configuration
-- datagram endpoint metadata
-- UDP JSONL recording
-
-MVP-5 adds:
-
-- FrameDecoder interface
-- raw, fixed-size, delimiter, and length-prefix frame decoders
-- frame events with `parent_seq`
-- shared event pipeline for raw and frame recording
-
-MVP-6 adds:
-
-- common send input format for TCP, Serial, and UDP Direct Mode
-- text, hex, and binary file command input
-
-MVP-7 adds:
-
-- UDS IPC event stream
-- JSONL over Unix Domain Socket for read-only viewer integration
-
-## What Packet Probe is not
-
-Packet Probe does not capture arbitrary OS-level network traffic like Wireshark or tcpdump.
-It connects to known device communication sessions and analyzes the data exchanged through them.
-
-Packet Probe does not use libpcap, Npcap, raw sockets, or promiscuous network capture.
-
-UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
-Domain Socket communication sessions. UDS IPC is an internal local communication
-channel between Packet Probe Core and a future viewer.
-
-## MVP status
-
-Implemented:
+## Features
 
 - TCP Direct Mode
 - TCP Server Direct Mode
 - TCP Proxy Mode
 - Serial Direct Mode
 - UDP Direct Mode
-- Raw byte recording
 - JSONL recording
-- FrameDecoder interface
-- raw/fixed/delimiter/length-prefix frame decoders
-- frame events with `parent_seq`
-- Common send input: text, hex, file
-- MessageDecoder extension interface for future protocol-specific decoders
 - UDS IPC event stream
+- Raw byte and frame events
+- Frame decoders: raw, fixed-size, delimiter, length-prefix
+- Common send input: text, hex, file
 
-Not implemented yet:
+## Current Limitations
 
-- UDS capture mode
-- PyQt viewer
-- protocol-specific message decoder
-- external decoder plugin system
-- replay
+- No UDS capture mode yet
+- No PyQt viewer yet
+- No protocol-specific message decoder yet
+- No external decoder plugin system yet
+- No replay support yet
+- TCP server mode accepts one client connection per process run
+- UDS IPC uses synchronous broadcast in the MVP
 
 ## Build
 
@@ -182,7 +117,11 @@ communication session.
 ```
 
 MVP tcp-server mode accepts one client connection per process run.
-Restart packet-probe to accept a new session after disconnect.
+
+Send input is attempted only after the CLI reads stdin or `--send-file`.
+For `--send-file`, a remote client must already be connected when the file payload is sent.
+If you need to send a command after connection, use stdin-based `--send-text` or `--send-hex`,
+or start the client before sending the file.
 
 Example:
 

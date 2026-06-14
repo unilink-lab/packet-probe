@@ -79,9 +79,20 @@ Multiple viewer clients can connect to the same socket.
 - If a client disconnects or a write fails, only that client is removed.
 - Client failures do not stop capture, recording, or other IPC clients.
 
-MVP IPC uses synchronous broadcast to connected clients. A slow client may delay
-event broadcast. Future versions may use non-blocking sockets or per-client
-queues.
+## Backpressure and Slow Clients
+
+MVP IPC uses synchronous broadcast to connected clients.
+
+This keeps the implementation simple, but a slow or blocked viewer client may delay
+event broadcast. Packet Probe removes clients when socket writes fail, but it does
+not yet use non-blocking sockets, per-client queues, or writer threads.
+
+Future versions may add:
+
+- non-blocking socket writes
+- per-client bounded queues
+- drop counters for slow clients
+- viewer-side flow control
 
 ## Socket Lifecycle
 
