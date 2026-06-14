@@ -6,7 +6,8 @@ namespace packet_probe::cli {
 
 int run_serial(CliOptions const& options, StopRequested const& stop_requested) {
   auto recorder = make_recorder(options);
-  auto pipeline = make_pipeline(options, *recorder);
+  auto ipc_server = make_ipc_server(options);
+  auto pipeline = make_pipeline(options, *recorder, ipc_server.get());
 
   SerialCaptureOptions capture_options;
   capture_options.port = options.serial_port;

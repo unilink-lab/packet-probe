@@ -9,14 +9,14 @@ Packet Probe is organized around a transport-independent event model.
       |
 [Packet Probe Core]
       |
- Future: UDS IPC
+ UDS IPC event stream
       |
 [Viewer]
 ```
 
-The current MVP is CLI-only. It records communication events from direct TCP, UDP,
-and Serial sessions or TCP proxy sessions and writes them to stdout and optional
-JSONL logs.
+The current MVP is CLI-first. It records communication events from direct TCP,
+UDP, and Serial sessions or TCP proxy sessions and writes them to stdout,
+optional JSONL logs, and optional UDS IPC event streams.
 
 TCP Proxy Mode:
 
@@ -39,7 +39,7 @@ Core responsibilities:
 - record source and destination endpoints when proxying
 - provide heuristic latency events for request/response-style traffic
 - derive frame events from raw payloads through a transport-independent decoder pipeline
-- keep capture, recorder, decoder, and future IPC layers separable
+- keep capture, recorder, decoder, and IPC layers separable
 
 Capture responsibilities:
 
@@ -72,9 +72,9 @@ Latency tracking:
 Without a protocol decoder, request/response pairing is heuristic-based. Protocol-specific
 decoders are expected to provide accurate pairing later.
 
-Future viewer integration should happen through an IPC boundary, not by mixing PyQt
-code into the core library.
+Viewer integration should happen through an IPC boundary, not by mixing PyQt code
+into the core library.
 
 UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
-Domain Socket communication sessions. UDS IPC is planned as an internal local
-communication channel between Packet Probe Core and a future viewer.
+Domain Socket communication sessions. UDS IPC is an internal local communication
+channel between Packet Probe Core and a future viewer.

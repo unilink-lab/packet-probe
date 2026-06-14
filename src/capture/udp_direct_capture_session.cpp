@@ -78,7 +78,9 @@ void UdpDirectCaptureSession::start() {
 }
 
 void UdpDirectCaptureSession::stop() {
-  stopped_.store(true);
+  if (stopped_.exchange(true)) {
+    return;
+  }
   if (impl_ && impl_->client) {
     impl_->client->stop();
     impl_->client.reset();

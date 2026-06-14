@@ -6,7 +6,8 @@ namespace packet_probe::cli {
 
 int run_tcp_client(CliOptions const& options, StopRequested const& stop_requested) {
   auto recorder = make_recorder(options);
-  auto pipeline = make_pipeline(options, *recorder);
+  auto ipc_server = make_ipc_server(options);
+  auto pipeline = make_pipeline(options, *recorder, ipc_server.get());
 
   TcpDirectCaptureOptions capture_options;
   capture_options.host = options.host;

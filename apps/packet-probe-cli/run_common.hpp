@@ -21,6 +21,7 @@
 #include "packet_probe/event_pipeline.hpp"
 #include "packet_probe/frame_decoder_factory.hpp"
 #include "packet_probe/hex_dump.hpp"
+#include "packet_probe/ipc_event_server.hpp"
 #include "packet_probe/jsonl_recorder.hpp"
 #include "packet_probe/send_input_parser.hpp"
 
@@ -32,7 +33,8 @@ bool stdin_is_terminal();
 std::vector<std::uint8_t> parse_send_line(std::string const& line, SendInputOptions const& send_options);
 void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled);
 std::unique_ptr<JsonlRecorder> make_recorder(CliOptions const& options);
-EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder);
+std::unique_ptr<IpcEventServer> make_ipc_server(CliOptions const& options);
+EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server);
 
 template <typename Session>
 int run_sender_session(Session& session, SendInputOptions const& send_options, StopRequested const& stop_requested) {
@@ -58,7 +60,9 @@ int run_sender_session(Session& session, SendInputOptions const& send_options, S
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
-  session.stop();
+  if (!session.stopped()) {
+    session.stop();
+  }
   return 0;
 }
 

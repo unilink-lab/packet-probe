@@ -61,6 +61,11 @@ MVP-6 adds:
 - common send input format for TCP, Serial, and UDP Direct Mode
 - text, hex, and binary file command input
 
+MVP-7 adds:
+
+- UDS IPC event stream
+- JSONL over Unix Domain Socket for read-only viewer integration
+
 ## What Packet Probe is not
 
 Packet Probe does not capture arbitrary OS-level network traffic like Wireshark or tcpdump.
@@ -69,8 +74,8 @@ It connects to known device communication sessions and analyzes the data exchang
 Packet Probe does not use libpcap, Npcap, raw sockets, or promiscuous network capture.
 
 UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
-Domain Socket communication sessions. UDS IPC is planned as an internal local
-communication channel between Packet Probe Core and a future viewer.
+Domain Socket communication sessions. UDS IPC is an internal local communication
+channel between Packet Probe Core and a future viewer.
 
 ## MVP status
 
@@ -87,11 +92,11 @@ Implemented:
 - frame events with `parent_seq`
 - Common send input: text, hex, file
 - MessageDecoder extension interface for future protocol-specific decoders
+- UDS IPC event stream
 
 Not implemented yet:
 
 - UDS capture mode
-- UDS IPC for viewer integration
 - PyQt viewer
 - protocol-specific message decoder
 - external decoder plugin system
@@ -147,6 +152,16 @@ packet-probe serial \
   --send-file command.bin \
   --log serial.jsonl \
   --hex
+```
+
+IPC event stream example:
+
+```sh
+packet-probe serial \
+  --port /dev/ttyUSB0 \
+  --baudrate 115200 \
+  --ipc /tmp/packet-probe.sock \
+  --log serial.jsonl
 ```
 
 JSONL event example:
@@ -268,7 +283,8 @@ Packet Probe does not include protocol-specific message decoders yet.
 - [Send Input](docs/send-input.md)
 - [Frame Decoders](docs/decoders.md)
 - [JSONL Format](docs/jsonl-format.md)
-- [IPC Protocol Draft](docs/ipc-protocol.md)
+- [IPC Protocol](docs/ipc-protocol.md)
+- [IPC Event Stream Validation](docs/validation/ipc-event-stream.md)
 - [Validation Guides](docs/validation/)
 - [Roadmap](docs/roadmap.md)
 

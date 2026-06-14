@@ -19,10 +19,13 @@ add_library(
   src/core/packet_event.cpp
   src/core/hex_dump.cpp
   src/core/endpoint.cpp
+  src/core/jsonl_serializer.cpp
   src/core/latency_tracker.cpp
   src/core/serial_options.cpp
   src/core/send_input_parser.cpp
   src/core/event_pipeline.cpp
+  src/ipc/ipc_event_server.cpp
+  src/ipc/ipc_protocol.cpp
   src/decoder/frame_decoder.cpp
   src/decoder/fixed_size_frame_decoder.cpp
   src/decoder/delimiter_frame_decoder.cpp

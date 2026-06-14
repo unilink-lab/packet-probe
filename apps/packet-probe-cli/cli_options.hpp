@@ -26,6 +26,7 @@ struct CliOptions {
   std::string target_host;
   std::uint16_t target_port = 0;
   std::string log_path;
+  std::string ipc_path;
   DecoderConfig decoder_config;
   SendInputOptions send_options;
   int send_option_count = 0;

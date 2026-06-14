@@ -30,6 +30,11 @@ int main() {
   assert(defaults.send_options.file_path.empty());
   packet_probe::cli::validate_options(defaults);
 
+  auto ipc = parse({"packet-probe", "udp", "--bind-host", "127.0.0.1", "--bind-port", "9000", "--ipc",
+                    "/tmp/packet-probe.sock"});
+  assert(ipc.ipc_path == "/tmp/packet-probe.sock");
+  packet_probe::cli::validate_options(ipc);
+
   assert(throws_invalid_argument([] {
     (void)parse({"packet-probe", "tcp-client", "--host", "127.0.0.1", "--port", "9000", "--send-text",
                  "--send-hex"});

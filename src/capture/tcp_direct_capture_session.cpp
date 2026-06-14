@@ -61,7 +61,9 @@ void TcpDirectCaptureSession::start() {
 }
 
 void TcpDirectCaptureSession::stop() {
-  stopped_.store(true);
+  if (stopped_.exchange(true)) {
+    return;
+  }
   if (impl_ && impl_->client) {
     impl_->client->stop();
     impl_->client.reset();

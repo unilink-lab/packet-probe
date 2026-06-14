@@ -106,6 +106,11 @@ CliOptions parse_args(int argc, char** argv) {
         throw std::invalid_argument("--log requires a value");
       }
       options.log_path = argv[i];
+    } else if (arg == "--ipc") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--ipc requires a value");
+      }
+      options.ipc_path = argv[i];
     } else if (!arg.empty() && arg[0] == '-') {
       throw std::invalid_argument("unknown option: " + arg);
     } else if (options.mode.empty()) {

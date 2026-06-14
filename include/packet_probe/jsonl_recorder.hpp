@@ -4,12 +4,10 @@
 #include <mutex>
 #include <string>
 
+#include "packet_probe/jsonl_serializer.hpp"
 #include "packet_probe/packet_event.hpp"
 
 namespace packet_probe {
-
-std::string serialize_jsonl(PacketEvent const& event);
-std::string serialize_metadata_jsonl();
 
 class JsonlRecorder {
  public:

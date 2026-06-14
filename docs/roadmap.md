@@ -47,7 +47,8 @@
 
 - UDS IPC
 - core event stream server
-- viewer protocol draft
+- JSONL over UDS
+- read-only viewer protocol
 
 ## MVP-8
 

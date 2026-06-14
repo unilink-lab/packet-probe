@@ -1,7 +1,8 @@
 # JSONL Format
 
 Packet Probe writes newline-delimited JSON. A log file starts with one metadata
-line, followed by event lines.
+line, followed by event lines. UDS IPC event streams use the same metadata and
+event JSON line format.
 
 ## Metadata
 

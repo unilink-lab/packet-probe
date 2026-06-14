@@ -30,6 +30,10 @@ add_executable(test_send_input_parser test_send_input_parser.cpp)
 target_link_libraries(test_send_input_parser PRIVATE packet_probe::core)
 add_test(NAME test_send_input_parser COMMAND test_send_input_parser)
 
+add_executable(test_ipc_protocol test_ipc_protocol.cpp)
+target_link_libraries(test_ipc_protocol PRIVATE packet_probe::core)
+add_test(NAME test_ipc_protocol COMMAND test_ipc_protocol)
+
 add_executable(
   test_cli_options
   test_cli_options.cpp

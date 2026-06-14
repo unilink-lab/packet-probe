@@ -62,11 +62,29 @@ std::unique_ptr<JsonlRecorder> make_recorder(CliOptions const& options) {
   return recorder;
 }
 
-EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder) {
+std::unique_ptr<IpcEventServer> make_ipc_server(CliOptions const& options) {
+  if (options.ipc_path.empty()) {
+    return nullptr;
+  }
+
+  IpcServerOptions ipc_options;
+  ipc_options.socket_path = options.ipc_path;
+  auto server = std::make_unique<IpcEventServer>(std::move(ipc_options));
+  server->start();
+  return server;
+}
+
+EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server) {
   (void)create_frame_decoder(options.decoder_config);
-  return EventPipeline(make_frame_decoder_factory(options.decoder_config), [&](PacketEvent const& event) {
+  auto const hex_raw = options.hex_raw;
+  auto const hex_frame = options.hex_frame;
+  return EventPipeline(make_frame_decoder_factory(options.decoder_config),
+                       [&recorder, ipc_server, hex_raw, hex_frame](PacketEvent const& event) {
     recorder.record(event);
-    print_event(event, options.hex_raw, options.hex_frame);
+    if (ipc_server != nullptr) {
+      ipc_server->broadcast(event);
+    }
+    print_event(event, hex_raw, hex_frame);
   });
 }
 
