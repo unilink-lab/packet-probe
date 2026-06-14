@@ -68,37 +68,34 @@ It connects to known device communication sessions and analyzes the data exchang
 
 Packet Probe does not use libpcap, Npcap, raw sockets, or promiscuous network capture.
 
+UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
+Domain Socket communication sessions. UDS IPC is planned as an internal local
+communication channel between Packet Probe Core and a future viewer.
+
 ## MVP status
 
 Implemented:
 
-- `packet-probe tcp-client`
-- `packet-probe tcp-proxy`
-- `packet-probe serial`
-- `packet-probe udp`
-- `PacketEvent`
-- `CaptureSession`
-- `TcpDirectCaptureSession`
-- `TcpProxyCaptureSession`
-- `SerialDirectCaptureSession`
-- `UdpDirectCaptureSession`
-- `FrameDecoder` interface
-- `MessageDecoder` extension interface
+- TCP Direct Mode
+- TCP Proxy Mode
+- Serial Direct Mode
+- UDP Direct Mode
+- Raw byte recording
+- JSONL recording
+- FrameDecoder interface
 - raw/fixed/delimiter/length-prefix frame decoders
-- frame events
-- common send input parser
-- `JsonlRecorder`
-- `LatencyTracker`
-- endpoint metadata
-- basic docs and tests
+- frame events with `parent_seq`
+- Common send input: text, hex, file
+- MessageDecoder extension interface for future protocol-specific decoders
 
 Not implemented yet:
 
+- UDS capture mode
+- UDS IPC for viewer integration
 - PyQt viewer
-- UDS IPC
-- UDS capture modes
 - protocol-specific message decoder
-- decoder plugin system
+- external decoder plugin system
+- replay
 
 ## Build
 
@@ -261,6 +258,9 @@ packet-probe tcp-client --host 127.0.0.1 --port 9000 \
 
 `--hex` prints raw byte events. Use `--hex-frame` to also print frame events.
 Decoder details are documented in [docs/decoders.md](docs/decoders.md).
+
+MessageDecoder extension interface is available as a future extension point.
+Packet Probe does not include protocol-specific message decoders yet.
 
 ## Roadmap
 

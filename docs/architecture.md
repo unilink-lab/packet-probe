@@ -74,3 +74,7 @@ decoders are expected to provide accurate pairing later.
 
 Future viewer integration should happen through an IPC boundary, not by mixing PyQt
 code into the core library.
+
+UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
+Domain Socket communication sessions. UDS IPC is planned as an internal local
+communication channel between Packet Probe Core and a future viewer.

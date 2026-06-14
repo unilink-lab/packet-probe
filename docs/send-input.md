@@ -116,3 +116,4 @@ echo "02 10 01 00 03 A7" | packet-probe udp \
 - There is no interactive command shell.
 - CRC generation and protocol-specific command builders are not implemented.
 - File input is not optimized for large files.
+- UDP file input sends the whole file as one datagram; oversized datagrams may fail.

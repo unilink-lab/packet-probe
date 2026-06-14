@@ -20,21 +20,20 @@
 - serial port configuration
 - serial RX/TX raw byte capture
 - serial JSONL recording
-- serial manual validation guide
 
 ## MVP-4
 
 - UDP Direct Mode
-- basic datagram endpoint metadata
+- datagram event model
+- UDP endpoint metadata
+- UDP JSONL recording
 
 ## MVP-5
 
 - FrameDecoder interface
-- raw frame decoder
-- fixed-size frame decoder
-- delimiter frame decoder
-- length-prefix frame decoder
+- raw/fixed/delimiter/length-prefix frame decoders
 - frame PacketEvent
+- EventPipeline
 
 ## MVP-6
 
@@ -42,14 +41,21 @@
 - --send-text
 - --send-hex
 - --send-file
+- CLI structure cleanup
 
 ## MVP-7
 
 - UDS IPC
-- PyQt viewer
+- core event stream server
+- viewer protocol draft
 
 ## MVP-8
 
+- PyQt read-only viewer
+
+## MVP-9
+
 - replay
+- protocol-specific decoder
 - decoder plugin
 - protocol schema support

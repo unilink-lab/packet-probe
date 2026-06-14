@@ -1,4 +1,19 @@
-add_executable(packet-probe main.cpp)
+set(PACKET_PROBE_CLI_COMMON_SOURCES
+    cli_decoder_options.cpp
+    cli_send_options.cpp
+    cli_options.cpp
+    cli_help.cpp
+)
+
+set(PACKET_PROBE_CLI_RUN_SOURCES
+    run_common.cpp
+    run_tcp_client.cpp
+    run_tcp_proxy.cpp
+    run_serial.cpp
+    run_udp.cpp
+)
+
+add_executable(packet-probe main.cpp ${PACKET_PROBE_CLI_COMMON_SOURCES} ${PACKET_PROBE_CLI_RUN_SOURCES})
 
 target_compile_features(packet-probe PRIVATE cxx_std_20)
 target_link_libraries(packet-probe PRIVATE packet_probe::capture)

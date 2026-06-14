@@ -29,3 +29,14 @@ add_test(NAME test_event_pipeline COMMAND test_event_pipeline)
 add_executable(test_send_input_parser test_send_input_parser.cpp)
 target_link_libraries(test_send_input_parser PRIVATE packet_probe::core)
 add_test(NAME test_send_input_parser COMMAND test_send_input_parser)
+
+add_executable(
+  test_cli_options
+  test_cli_options.cpp
+  ../apps/packet-probe-cli/cli_decoder_options.cpp
+  ../apps/packet-probe-cli/cli_send_options.cpp
+  ../apps/packet-probe-cli/cli_options.cpp
+)
+target_include_directories(test_cli_options PRIVATE ../apps/packet-probe-cli)
+target_link_libraries(test_cli_options PRIVATE packet_probe::core)
+add_test(NAME test_cli_options COMMAND test_cli_options)

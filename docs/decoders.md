@@ -14,9 +14,10 @@ is intentionally left for later work.
 
 ## Event Types
 
-- `raw_bytes`: payload observed directly from TCP, UDP, or Serial transport
-- `frame`: logical frame extracted from a raw byte stream
-- `decoded_message`: reserved for future protocol-specific message decoders
+- RawBytes Event: payload observed directly from TCP, UDP, or Serial transport.
+- Frame Event: logical frame extracted from a raw stream or datagram by a `FrameDecoder`.
+- DecodedMessage Event: protocol-specific `MessageDecoder` output that interprets a frame
+  into meaningful fields. Currently only the extension point exists.
 
 Frame events copy direction and endpoint metadata from the raw event that produced
 them. Each frame event records `parent_seq`, which points to the source raw event.
