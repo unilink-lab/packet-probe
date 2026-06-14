@@ -38,10 +38,17 @@
 
 ## MVP-6
 
+- common send input format
+- --send-text
+- --send-hex
+- --send-file
+
+## MVP-7
+
 - UDS IPC
 - PyQt viewer
 
-## MVP-7
+## MVP-8
 
 - replay
 - decoder plugin

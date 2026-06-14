@@ -21,6 +21,7 @@ add_library(
   src/core/endpoint.cpp
   src/core/latency_tracker.cpp
   src/core/serial_options.cpp
+  src/core/send_input_parser.cpp
   src/core/event_pipeline.cpp
   src/decoder/frame_decoder.cpp
   src/decoder/fixed_size_frame_decoder.cpp

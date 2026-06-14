@@ -56,6 +56,11 @@ MVP-5 adds:
 - frame events with `parent_seq`
 - shared event pipeline for raw and frame recording
 
+MVP-6 adds:
+
+- common send input format for TCP, Serial, and UDP Direct Mode
+- text, hex, and binary file command input
+
 ## What Packet Probe is not
 
 Packet Probe does not capture arbitrary OS-level network traffic like Wireshark or tcpdump.
@@ -81,6 +86,7 @@ Implemented:
 - `MessageDecoder` extension interface
 - raw/fixed/delimiter/length-prefix frame decoders
 - frame events
+- common send input parser
 - `JsonlRecorder`
 - `LatencyTracker`
 - endpoint metadata
@@ -127,6 +133,24 @@ packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
 
 In `tcp-client` mode, lines typed on stdin are sent to the target as raw bytes and
 recorded as TX events. Bytes received from the target are recorded as RX events.
+
+Send input examples:
+
+```sh
+echo "02 10 01 00 03 A7" | packet-probe serial \
+  --port /dev/ttyUSB0 \
+  --baudrate 115200 \
+  --send-hex \
+  --log serial.jsonl \
+  --hex
+
+packet-probe serial \
+  --port /dev/ttyUSB0 \
+  --baudrate 115200 \
+  --send-file command.bin \
+  --log serial.jsonl \
+  --hex
+```
 
 JSONL event example:
 
@@ -204,7 +228,8 @@ Supported serial options:
 - `--parity <none|odd|even>`, default: `none`
 - `--flow-control <none|software|hardware>`, default: `none`
 
-MVP-3 sends stdin lines as raw text bytes. Hex command input will be added later.
+Packet Probe supports text, hex, and binary file input for sending commands.
+Use `--send-text`, `--send-hex`, or `--send-file`.
 
 Manual validation options are documented in [docs/serial-validation.md](docs/serial-validation.md).
 
@@ -218,6 +243,8 @@ packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
 
 If `--target-host` and `--target-port` are provided, stdin lines are sent as UDP
 datagrams to that target and recorded as `app_to_device` events.
+
+Send input details are documented in [docs/send-input.md](docs/send-input.md).
 
 ## Frame Decoders
 

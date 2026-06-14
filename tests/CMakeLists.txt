@@ -25,3 +25,7 @@ add_test(NAME test_frame_decoders COMMAND test_frame_decoders)
 add_executable(test_event_pipeline test_event_pipeline.cpp)
 target_link_libraries(test_event_pipeline PRIVATE packet_probe::core)
 add_test(NAME test_event_pipeline COMMAND test_event_pipeline)
+
+add_executable(test_send_input_parser test_send_input_parser.cpp)
+target_link_libraries(test_send_input_parser PRIVATE packet_probe::core)
+add_test(NAME test_send_input_parser COMMAND test_send_input_parser)

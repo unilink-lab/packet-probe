@@ -5,9 +5,11 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if defined(_WIN32)
@@ -20,6 +22,7 @@
 #include "packet_probe/event_pipeline.hpp"
 #include "packet_probe/frame_decoder_factory.hpp"
 #include "packet_probe/jsonl_recorder.hpp"
+#include "packet_probe/send_input_parser.hpp"
 #include "packet_probe/serial_direct_capture_session.hpp"
 #include "packet_probe/tcp_direct_capture_session.hpp"
 #include "packet_probe/tcp_proxy_capture_session.hpp"
@@ -50,6 +53,8 @@ struct CliOptions {
   std::uint16_t target_port = 0;
   std::string log_path;
   packet_probe::DecoderConfig decoder_config;
+  packet_probe::SendInputOptions send_options;
+  int send_option_count = 0;
   bool hex_raw = false;
   bool hex_frame = false;
   bool latency = true;
@@ -94,6 +99,9 @@ void print_help(std::ostream& out) {
       << "  --length-size <1|2|4> Length-prefix field size, default: 2\n"
       << "  --length-endian <little|big>  Length-prefix endian, default: big\n"
       << "  --length-includes-header  Length includes the prefix bytes\n"
+      << "  --send-text       Send stdin lines as text bytes, default\n"
+      << "  --send-hex        Parse stdin lines as hex bytes before sending\n"
+      << "  --send-file <path>  Send one binary file payload and exit\n"
       << "  --log <path>      Write events as JSONL\n"
       << "  --hex             Print one-line hex output for raw byte events\n"
       << "  --hex-raw         Print one-line hex output for raw byte events\n"
@@ -134,6 +142,9 @@ void print_serial_help(std::ostream& out) {
       << "  --flow-control <none|software|hardware>\n"
       << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
       << "  --delimiter <hex|CRLF|LF>  Delimiter frame boundary\n"
+      << "  --send-text                Send stdin lines as text bytes, default\n"
+      << "  --send-hex                 Parse stdin lines as hex bytes before sending\n"
+      << "  --send-file <path>         Send one binary file payload and exit\n"
       << "  --log <path>               Write events as JSONL\n"
       << "  --hex                      Print one-line hex output for raw byte events\n"
       << "  --hex-frame                Print one-line hex output for frame events\n"
@@ -150,6 +161,9 @@ void print_udp_help(std::ostream& out) {
       << "  --target-host <host>       Optional UDP target host for stdin sends\n"
       << "  --target-port <port>       Optional UDP target port for stdin sends\n"
       << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
+      << "  --send-text                Send stdin lines as text datagrams, default\n"
+      << "  --send-hex                 Parse stdin lines as hex datagrams before sending\n"
+      << "  --send-file <path>         Send one binary file datagram and exit\n"
       << "  --log <path>               Write events as JSONL\n"
       << "  --hex                      Print one-line hex output for raw byte events\n"
       << "  --hex-frame                Print one-line hex output for frame events\n"
@@ -163,6 +177,15 @@ std::uint16_t parse_port(std::string const& value) {
     throw std::invalid_argument("invalid --port value: " + value);
   }
   return static_cast<std::uint16_t>(port);
+}
+
+void set_send_format(CliOptions& options, packet_probe::SendInputFormat format, std::string file_path = {}) {
+  ++options.send_option_count;
+  if (options.send_option_count > 1) {
+    throw std::invalid_argument("--send-text, --send-hex, and --send-file cannot be used together");
+  }
+  options.send_options.format = format;
+  options.send_options.file_path = std::move(file_path);
 }
 
 CliOptions parse_args(int argc, char** argv) {
@@ -179,6 +202,15 @@ CliOptions parse_args(int argc, char** argv) {
       options.hex_frame = true;
     } else if (arg == "--latency") {
       options.latency = true;
+    } else if (arg == "--send-text") {
+      set_send_format(options, packet_probe::SendInputFormat::Text);
+    } else if (arg == "--send-hex") {
+      set_send_format(options, packet_probe::SendInputFormat::Hex);
+    } else if (arg == "--send-file") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--send-file requires a value");
+      }
+      set_send_format(options, packet_probe::SendInputFormat::File, argv[i]);
     } else if (arg == "--decoder") {
       if (++i >= argc) {
         throw std::invalid_argument("--decoder requires a value");
@@ -293,10 +325,6 @@ CliOptions parse_args(int argc, char** argv) {
   return options;
 }
 
-std::vector<std::uint8_t> line_to_payload(std::string const& line) {
-  return std::vector<std::uint8_t>(line.begin(), line.end());
-}
-
 bool stdin_is_terminal() {
 #if defined(_WIN32)
   return _isatty(_fileno(stdin)) != 0;
@@ -305,12 +333,33 @@ bool stdin_is_terminal() {
 #endif
 }
 
+std::vector<std::uint8_t> parse_send_line(std::string const& line, packet_probe::SendInputOptions const& send_options) {
+  switch (send_options.format) {
+    case packet_probe::SendInputFormat::Text:
+      return packet_probe::parse_text_payload(line);
+    case packet_probe::SendInputFormat::Hex:
+      return packet_probe::parse_hex_payload(line);
+    case packet_probe::SendInputFormat::File:
+      break;
+  }
+  throw std::logic_error("send-file does not parse stdin lines");
+}
+
 template <typename Session>
-int run_line_sender_session(Session& session) {
+int run_line_sender_session(Session& session, packet_probe::SendInputOptions const& send_options) {
+  if (send_options.format == packet_probe::SendInputFormat::File) {
+    auto payload = packet_probe::read_binary_file(send_options.file_path);
+    if (!session.send(std::move(payload))) {
+      throw std::runtime_error("failed to send file payload");
+    }
+    session.stop();
+    return 0;
+  }
+
   auto const interactive_stdin = stdin_is_terminal();
   std::string line;
   while (!g_stop_requested && !session.stopped() && std::getline(std::cin, line)) {
-    auto payload = line_to_payload(line);
+    auto payload = parse_send_line(line, send_options);
     if (!session.send(std::move(payload))) {
       std::cerr << "failed to send payload\n";
     }
@@ -430,7 +479,7 @@ int run_tcp_client(CliOptions const& options) {
       });
 
   session.start();
-  return run_line_sender_session(session);
+  return run_line_sender_session(session, options.send_options);
 }
 
 int run_serial(CliOptions const& options) {
@@ -458,7 +507,7 @@ int run_serial(CliOptions const& options) {
       });
 
   session.start();
-  return run_line_sender_session(session);
+  return run_line_sender_session(session, options.send_options);
 }
 
 int run_udp(CliOptions const& options) {
@@ -467,6 +516,9 @@ int run_udp(CliOptions const& options) {
   }
   if (options.bind_port == 0) {
     throw std::invalid_argument("udp requires --bind-port");
+  }
+  if (options.send_option_count > 0 && options.target_host.empty()) {
+    throw std::invalid_argument("udp send input requires --target-host and --target-port");
   }
 
   auto recorder = make_recorder(options);
@@ -484,7 +536,7 @@ int run_udp(CliOptions const& options) {
       });
 
   session.start();
-  return run_line_sender_session(session);
+  return run_line_sender_session(session, options.send_options);
 }
 
 }  // namespace
