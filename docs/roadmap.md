@@ -16,15 +16,28 @@
 
 ## MVP-3
 
-- UDP and Serial Direct Mode
-- basic frame decoder
+- Serial Direct Mode
+- serial port configuration
+- serial RX/TX raw byte capture
+- serial JSONL recording
+- serial manual validation guide
 
 ## MVP-4
+
+- UDP Direct Mode
+- basic datagram endpoint metadata
+
+## MVP-5
+
+- basic frame decoder
+- decoder interface
+
+## MVP-6
 
 - UDS IPC
 - PyQt viewer
 
-## MVP-5
+## MVP-7
 
 - replay
 - decoder plugin

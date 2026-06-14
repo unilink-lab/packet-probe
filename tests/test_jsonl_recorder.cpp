@@ -79,5 +79,20 @@ int main() {
   assert(latency_line.find("\"latency_ns\":940000") != std::string::npos);
   assert(latency_line.find("\"latency_us\":940") != std::string::npos);
 
+  auto serial = base_event();
+  serial.session_id = "serial-1";
+  serial.transport = "serial";
+  serial.direction = packet_probe::Direction::DeviceToApp;
+  serial.source_endpoint = "/dev/ttyUSB0";
+  serial.destination_endpoint = "packet-probe";
+  serial.payload = {0x02, 0x10, 0x01, 0x00, 0x03, 0xA7};
+  serial.summary = "DEVICE -> APP 6 bytes";
+  auto serial_line = packet_probe::serialize_jsonl(serial);
+  assert(serial_line.find("\"transport\":\"serial\"") != std::string::npos);
+  assert(serial_line.find("\"direction\":\"device_to_app\"") != std::string::npos);
+  assert(serial_line.find("\"source\":\"/dev/ttyUSB0\"") != std::string::npos);
+  assert(serial_line.find("\"destination\":\"packet-probe\"") != std::string::npos);
+  assert(serial_line.find("\"payload_hex\":\"0210010003A7\"") != std::string::npos);
+
   return 0;
 }

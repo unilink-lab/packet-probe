@@ -13,3 +13,7 @@ add_test(NAME test_latency_tracker COMMAND test_latency_tracker)
 add_executable(test_packet_event_direction test_packet_event_direction.cpp)
 target_link_libraries(test_packet_event_direction PRIVATE packet_probe::core)
 add_test(NAME test_packet_event_direction COMMAND test_packet_event_direction)
+
+add_executable(test_serial_options test_serial_options.cpp)
+target_link_libraries(test_serial_options PRIVATE packet_probe::core)
+add_test(NAME test_serial_options COMMAND test_serial_options)

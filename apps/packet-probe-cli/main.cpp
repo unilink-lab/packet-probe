@@ -18,6 +18,7 @@
 
 #include "packet_probe/hex_dump.hpp"
 #include "packet_probe/jsonl_recorder.hpp"
+#include "packet_probe/serial_direct_capture_session.hpp"
 #include "packet_probe/tcp_direct_capture_session.hpp"
 #include "packet_probe/tcp_proxy_capture_session.hpp"
 #include "packet_probe/version.hpp"
@@ -32,6 +33,12 @@ struct CliOptions {
   std::string mode;
   std::string host;
   std::uint16_t port = 0;
+  std::string serial_port;
+  std::uint32_t baudrate = 115200;
+  std::uint8_t data_bits = 8;
+  std::uint8_t stop_bits = 1;
+  packet_probe::SerialParity parity = packet_probe::SerialParity::None;
+  packet_probe::SerialFlowControl flow_control = packet_probe::SerialFlowControl::None;
   std::string listen_host;
   std::uint16_t listen_port = 0;
   std::string target_host;
@@ -49,10 +56,12 @@ void print_help(std::ostream& out) {
       << "  packet-probe tcp-client --host <host> --port <port> [--log <path>] [--hex]\n"
       << "  packet-probe tcp-proxy --listen-host <host> --listen-port <port> "
          "--target-host <host> --target-port <port> [--log <path>] [--hex] [--latency]\n"
+      << "  packet-probe serial --port <path> --baudrate <rate> [--log <path>] [--hex]\n"
       << "\n"
       << "Modes:\n"
       << "  tcp-client    Connect directly to a TCP target device\n"
       << "  tcp-proxy     Listen locally and proxy one TCP client to a target device\n"
+      << "  serial        Connect directly to a serial target device\n"
       << "\n"
       << "Options:\n"
       << "  --host <host>     Target host for tcp-client mode\n"
@@ -61,6 +70,11 @@ void print_help(std::ostream& out) {
       << "  --listen-port <port>  Local listen port for tcp-proxy mode\n"
       << "  --target-host <host>  Target host for tcp-proxy mode\n"
       << "  --target-port <port>  Target port for tcp-proxy mode\n"
+      << "  --baudrate <rate>     Serial baudrate for serial mode\n"
+      << "  --data-bits <5|6|7|8> Serial data bits, default: 8\n"
+      << "  --stop-bits <1|2>     Serial stop bits, default: 1\n"
+      << "  --parity <none|odd|even>  Serial parity, default: none\n"
+      << "  --flow-control <none|software|hardware>  Serial flow control, default: none\n"
       << "  --log <path>      Write events as JSONL\n"
       << "  --hex             Print one-line hex output for raw byte events\n"
       << "  --latency         Enable heuristic request/response latency events\n"
@@ -82,6 +96,22 @@ void print_tcp_proxy_help(std::ostream& out) {
       << "  --hex                 Print one-line hex output for raw byte events\n"
       << "  --latency             Enable heuristic request/response latency events\n"
       << "  --help                Show this help\n";
+}
+
+void print_serial_help(std::ostream& out) {
+  out << "Usage:\n"
+      << "  packet-probe serial --port <path> --baudrate <rate> [options]\n"
+      << "\n"
+      << "Options:\n"
+      << "  --port <path>              Serial port path, e.g. /dev/ttyUSB0 or COM3\n"
+      << "  --baudrate <rate>          Serial baudrate, e.g. 9600, 115200, 921600\n"
+      << "  --data-bits <5|6|7|8>      Data bits, default: 8\n"
+      << "  --stop-bits <1|2>          Stop bits, default: 1\n"
+      << "  --parity <none|odd|even>   Parity, default: none\n"
+      << "  --flow-control <none|software|hardware>\n"
+      << "  --log <path>               Write events as JSONL\n"
+      << "  --hex                      Print one-line hex output for raw byte events\n"
+      << "  --help                     Show this help\n";
 }
 
 std::uint16_t parse_port(std::string const& value) {
@@ -114,7 +144,36 @@ CliOptions parse_args(int argc, char** argv) {
       if (++i >= argc) {
         throw std::invalid_argument("--port requires a value");
       }
-      options.port = parse_port(argv[i]);
+      if (options.mode == "serial") {
+        options.serial_port = argv[i];
+      } else {
+        options.port = parse_port(argv[i]);
+      }
+    } else if (arg == "--baudrate") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--baudrate requires a value");
+      }
+      options.baudrate = packet_probe::parse_serial_baudrate(argv[i]);
+    } else if (arg == "--data-bits") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--data-bits requires a value");
+      }
+      options.data_bits = packet_probe::parse_serial_data_bits(argv[i]);
+    } else if (arg == "--stop-bits") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--stop-bits requires a value");
+      }
+      options.stop_bits = packet_probe::parse_serial_stop_bits(argv[i]);
+    } else if (arg == "--parity") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--parity requires a value");
+      }
+      options.parity = packet_probe::parse_serial_parity(argv[i]);
+    } else if (arg == "--flow-control") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--flow-control requires a value");
+      }
+      options.flow_control = packet_probe::parse_serial_flow_control(argv[i]);
     } else if (arg == "--listen-host") {
       if (++i >= argc) {
         throw std::invalid_argument("--listen-host requires a value");
@@ -161,6 +220,25 @@ bool stdin_is_terminal() {
 #else
   return isatty(fileno(stdin)) != 0;
 #endif
+}
+
+template <typename Session>
+int run_line_sender_session(Session& session) {
+  auto const interactive_stdin = stdin_is_terminal();
+  std::string line;
+  while (!g_stop_requested && !session.stopped() && std::getline(std::cin, line)) {
+    auto payload = line_to_payload(line);
+    if (!session.send(std::move(payload))) {
+      std::cerr << "failed to send payload\n";
+    }
+  }
+
+  while (!interactive_stdin && !g_stop_requested && !session.stopped()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  session.stop();
+  return 0;
 }
 
 void print_event(packet_probe::PacketEvent const& event, bool hex_enabled) {
@@ -245,22 +323,38 @@ int run_tcp_client(CliOptions const& options) {
       });
 
   session.start();
+  return run_line_sender_session(session);
+}
 
-  auto const interactive_stdin = stdin_is_terminal();
-  std::string line;
-  while (!g_stop_requested && !session.stopped() && std::getline(std::cin, line)) {
-    auto payload = line_to_payload(line);
-    if (!session.send(std::move(payload))) {
-      std::cerr << "failed to send payload\n";
-    }
+int run_serial(CliOptions const& options) {
+  if (options.serial_port.empty()) {
+    throw std::invalid_argument("serial requires --port");
+  }
+  if (options.baudrate == 0) {
+    throw std::invalid_argument("serial requires --baudrate");
   }
 
-  while (!interactive_stdin && !g_stop_requested && !session.stopped()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  auto recorder = std::make_unique<packet_probe::JsonlRecorder>();
+  if (!options.log_path.empty()) {
+    recorder->open(options.log_path);
   }
 
-  session.stop();
-  return 0;
+  packet_probe::SerialCaptureOptions capture_options;
+  capture_options.port = options.serial_port;
+  capture_options.baudrate = options.baudrate;
+  capture_options.data_bits = options.data_bits;
+  capture_options.stop_bits = options.stop_bits;
+  capture_options.parity = options.parity;
+  capture_options.flow_control = options.flow_control;
+
+  packet_probe::SerialDirectCaptureSession session(
+      capture_options, [&](packet_probe::PacketEvent const& event) {
+        recorder->record(event);
+        print_event(event, options.hex);
+      });
+
+  session.start();
+  return run_line_sender_session(session);
 }
 
 }  // namespace
@@ -274,6 +368,8 @@ int main(int argc, char** argv) {
     if (options.help || argc == 1) {
       if (options.mode == "tcp-proxy") {
         print_tcp_proxy_help(std::cout);
+      } else if (options.mode == "serial") {
+        print_serial_help(std::cout);
       } else {
         print_help(std::cout);
       }
@@ -288,6 +384,9 @@ int main(int argc, char** argv) {
     }
     if (options.mode == "tcp-proxy") {
       return run_tcp_proxy(options);
+    }
+    if (options.mode == "serial") {
+      return run_serial(options);
     }
 
     throw std::invalid_argument("unknown or missing mode: " + options.mode);

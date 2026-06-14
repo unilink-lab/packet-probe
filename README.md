@@ -9,8 +9,7 @@ communication sessions with connected equipment.
 ## Overview
 
 Packet Probe connects to known device communication sessions and records the raw bytes
-exchanged with target equipment. MVP-1 starts with TCP Direct Mode through a CLI named
-`packet-probe`.
+exchanged with target equipment. The CLI is named `packet-probe`.
 
 The core model records timestamp, direction, size, payload, transport, and session
 metadata as `PacketEvent` values. Events can be printed as one-line hex output and
@@ -35,6 +34,14 @@ MVP-2 adds:
 - source and destination endpoint metadata
 - heuristic request/response latency events
 
+MVP-3 adds:
+
+- Serial Direct Mode
+- serial port configuration
+- serial RX/TX raw byte capture
+- serial JSONL recording
+- serial manual validation guidance
+
 ## What Packet Probe is not
 
 Packet Probe does not capture arbitrary OS-level network traffic like Wireshark or tcpdump.
@@ -48,24 +55,29 @@ Implemented:
 
 - `packet-probe tcp-client`
 - `packet-probe tcp-proxy`
+- `packet-probe serial`
 - `PacketEvent`
 - `CaptureSession`
 - `TcpDirectCaptureSession`
 - `TcpProxyCaptureSession`
+- `SerialDirectCaptureSession`
 - `JsonlRecorder`
+- `LatencyTracker`
+- endpoint metadata
 - basic docs and tests
 
 Not implemented yet:
 
 - PyQt viewer
 - UDS IPC
-- UDP, Serial, or UDS capture modes
+- UDP or UDS capture modes
 - decoder plugin system
 
 ## Build
 
 By default, CMake looks for a sibling unilink source tree at `../unilink`.
 If that path does not exist, it falls back to `find_package(unilink CONFIG REQUIRED)`.
+Packet Probe requires a C++20-capable compiler.
 
 ```sh
 cmake -S . -B build
@@ -87,6 +99,8 @@ packet-probe --version
 packet-probe tcp-client --host 127.0.0.1 --port 9000
 packet-probe tcp-client --host 127.0.0.1 --port 9000 --hex
 packet-probe tcp-client --host 127.0.0.1 --port 9000 --log capture.jsonl --hex
+packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --hex
+packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
 ```
 
 In `tcp-client` mode, lines typed on stdin are sent to the target as raw bytes and
@@ -144,6 +158,33 @@ packet-probe tcp-proxy \
 
 Then connect a test client to `127.0.0.1:9000` while a target echo server is
 listening on `127.0.0.1:9100`.
+
+## Serial Direct Mode
+
+Serial Direct Mode connects directly to a serial target device.
+
+Linux example:
+
+```sh
+packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --log serial.jsonl --hex
+```
+
+Windows example:
+
+```sh
+packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
+```
+
+Supported serial options:
+
+- `--data-bits <5|6|7|8>`, default: `8`
+- `--stop-bits <1|2>`, default: `1`
+- `--parity <none|odd|even>`, default: `none`
+- `--flow-control <none|software|hardware>`, default: `none`
+
+MVP-3 sends stdin lines as raw text bytes. Hex command input will be added later.
+
+Manual validation options are documented in [docs/serial-validation.md](docs/serial-validation.md).
 
 ## Roadmap
 

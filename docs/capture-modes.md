@@ -4,14 +4,18 @@
 
 Packet Probe connects directly to a target device.
 
-MVP-1 implements Direct Mode for TCP client sessions only.
+Direct Mode is implemented for:
+
+- TCP client sessions
+- Serial sessions
 
 ## 2. Proxy Mode
 
 Packet Probe sits between an existing application and a target device.
 
 Proxy Mode is implemented for TCP in MVP-2.
-UDP and Serial proxy modes are not implemented yet.
+Serial proxy mode is not implemented yet.
+UDP proxy mode is not implemented yet.
 
 ## 3. Hook Mode
 

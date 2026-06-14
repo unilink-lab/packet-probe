@@ -20,11 +20,12 @@ add_library(
   src/core/hex_dump.cpp
   src/core/endpoint.cpp
   src/core/latency_tracker.cpp
+  src/core/serial_options.cpp
   src/recorder/jsonl_recorder.cpp
 )
 add_library(packet_probe::core ALIAS packet_probe_core)
 
-target_compile_features(packet_probe_core PUBLIC cxx_std_17)
+target_compile_features(packet_probe_core PUBLIC cxx_std_20)
 target_include_directories(
   packet_probe_core
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -42,9 +43,14 @@ if(PACKET_PROBE_USE_UNILINK)
     find_package(unilink CONFIG REQUIRED)
   endif()
 
-  add_library(packet_probe_capture src/capture/tcp_direct_capture_session.cpp src/capture/tcp_proxy_capture_session.cpp)
+  add_library(
+    packet_probe_capture
+    src/capture/tcp_direct_capture_session.cpp
+    src/capture/tcp_proxy_capture_session.cpp
+    src/capture/serial_direct_capture_session.cpp
+  )
   add_library(packet_probe::capture ALIAS packet_probe_capture)
-  target_compile_features(packet_probe_capture PUBLIC cxx_std_17)
+  target_compile_features(packet_probe_capture PUBLIC cxx_std_20)
   target_include_directories(
     packet_probe_capture
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
