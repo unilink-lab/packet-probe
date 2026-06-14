@@ -1,0 +1,117 @@
+#include "packet_probe/jsonl_recorder.hpp"
+
+#include <stdexcept>
+
+#include "packet_probe/hex_dump.hpp"
+
+namespace packet_probe {
+
+namespace {
+
+std::string escape_json(std::string const& value) {
+  std::string escaped;
+  escaped.reserve(value.size());
+  for (char ch : value) {
+    auto const byte = static_cast<unsigned char>(ch);
+    switch (ch) {
+      case '"':
+        escaped += "\\\"";
+        break;
+      case '\\':
+        escaped += "\\\\";
+        break;
+      case '\b':
+        escaped += "\\b";
+        break;
+      case '\f':
+        escaped += "\\f";
+        break;
+      case '\n':
+        escaped += "\\n";
+        break;
+      case '\r':
+        escaped += "\\r";
+        break;
+      case '\t':
+        escaped += "\\t";
+        break;
+      default:
+        if (byte < 0x20) {
+          constexpr char digits[] = "0123456789ABCDEF";
+          escaped += "\\u00";
+          escaped += digits[(byte >> 4) & 0x0F];
+          escaped += digits[byte & 0x0F];
+        } else {
+          escaped += ch;
+        }
+        break;
+    }
+  }
+  return escaped;
+}
+
+}  // namespace
+
+std::string serialize_jsonl(PacketEvent const& event) {
+  std::string line;
+  line += "{\"seq\":";
+  line += std::to_string(event.sequence);
+  line += ",\"time_ns\":";
+  line += std::to_string(event.timestamp_ns);
+  line += ",\"session\":\"";
+  line += escape_json(event.session_id);
+  line += "\",\"transport\":\"";
+  line += escape_json(event.transport);
+  line += "\",\"direction\":\"";
+  line += to_string(event.direction);
+  line += "\",\"type\":\"";
+  line += to_string(event.type);
+  line += "\",\"size\":";
+  line += std::to_string(event.payload.size());
+  line += ",\"payload_hex\":\"";
+  line += to_hex(event.payload, false);
+  line += "\",\"summary\":\"";
+  line += escape_json(event.summary);
+  line += '"';
+  if (!event.decoded_json.empty()) {
+    line += ",\"decoded\":";
+    line += event.decoded_json;
+  }
+  line += '}';
+  return line;
+}
+
+JsonlRecorder::JsonlRecorder(std::string path) { open(std::move(path)); }
+
+JsonlRecorder::~JsonlRecorder() { close(); }
+
+void JsonlRecorder::open(std::string path) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  output_.open(path, std::ios::out | std::ios::app);
+  if (!output_) {
+    throw std::runtime_error("failed to open JSONL log: " + path);
+  }
+}
+
+void JsonlRecorder::close() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (output_.is_open()) {
+    output_.close();
+  }
+}
+
+bool JsonlRecorder::is_open() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return output_.is_open();
+}
+
+void JsonlRecorder::record(PacketEvent const& event) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!output_.is_open()) {
+    return;
+  }
+  output_ << serialize_jsonl(event) << '\n';
+  output_.flush();
+}
+
+}  // namespace packet_probe
