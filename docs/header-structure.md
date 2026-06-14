@@ -42,6 +42,9 @@ Packet Probe's external integration path is IPC/JSONL, not direct C++ embedding.
 A future viewer should subscribe to the UDS IPC event stream instead of including
 capture session classes directly.
 
+The optional viewer is expected to integrate through the IPC JSONL event stream
+instead of directly including internal C++ capture headers.
+
 ## Future
 
 If Packet Probe later becomes a C++ SDK, selected internal headers may be

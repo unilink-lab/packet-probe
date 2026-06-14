@@ -1,0 +1,20 @@
+[project]
+name = "packet-probe-viewer"
+version = "0.1.0"
+description = "Optional read-only viewer for Packet Probe event streams"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Packet Probe contributors" }
+]
+dependencies = [
+  "PySide6>=6.6"
+]
+
+[project.scripts]
+packet-probe-viewer = "packet_probe_viewer.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["packet_probe_viewer*"]

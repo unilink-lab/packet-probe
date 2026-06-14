@@ -31,7 +31,7 @@ written as JSONL for later viewer support.
 ## Current Limitations
 
 - No UDS capture mode yet
-- No PyQt viewer yet
+- PySide6-based viewer is not implemented yet.
 - No protocol-specific message decoder yet
 - No external decoder plugin system yet
 - No replay support yet
@@ -255,6 +255,17 @@ Public headers are limited to:
 
 Capture sessions, recorders, IPC server implementation, send input parsing, and
 CLI helpers are internal implementation details.
+
+## Viewer
+
+Packet Probe will provide an optional viewer under `viewer/`.
+
+The core and CLI are licensed under Apache-2.0. The viewer source code is also
+licensed under Apache-2.0, but the viewer depends on PySide6 / Qt for Python as
+an external runtime dependency.
+
+PySide6 and Qt are not vendored in this repository. See
+`viewer/THIRD_PARTY_NOTICES.md` for dependency license notes.
 
 ## Documentation
 
