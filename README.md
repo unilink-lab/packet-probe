@@ -262,7 +262,9 @@ CLI helpers are internal implementation details.
 Packet Probe includes an optional PySide6-based read-only viewer under `viewer/`.
 
 The viewer connects to Packet Probe's UDS IPC event stream and displays packet
-events in a table with hex and JSON detail views.
+events in a table with hex and JSON detail views. The viewer can either connect
+to an existing IPC socket or launch `packet-probe` directly and connect to the
+generated IPC socket.
 
 Packet Probe IPC is implemented through the unilink UDS transport. The viewer is
 planned to use the unilink-python UDS client support for the same IPC stream.

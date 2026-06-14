@@ -10,7 +10,8 @@ authors = [
 ]
 dependencies = [
   "PySide6>=6.6",
-  # TODO: enable when unilink-python is available as an installable package
+  # Live IPC requires unilink-python.
+  # Keep this as a documented local/sibling dependency until packaged wheels are available.
   # "unilink-python>=0.7.4",
 ]
 

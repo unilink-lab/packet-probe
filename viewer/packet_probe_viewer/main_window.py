@@ -1,15 +1,18 @@
 import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-    QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog
+    QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
+    QPlainTextEdit, QGroupBox
 )
-from PySide6.QtCore import Qt, QItemSelection, QModelIndex
+from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer
 from .ipc_client import IpcClientWorker
 from .event_model import PacketEvent
 from .packet_table_model import PacketTableModel
 from .widgets.hex_view import HexView
 from .widgets.event_detail import EventDetailView
 from .jsonl_log_loader import load_packet_probe_jsonl
+from .ipc_path import make_default_ipc_path
+from .capture_process import CaptureProcess
 
 def format_metadata_message(metadata: dict | None) -> str:
     if not metadata:
@@ -24,15 +27,28 @@ class MainWindow(QMainWindow):
     def __init__(self, initial_socket_path: str = "/tmp/packet-probe.sock", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Packet Probe Viewer")
-        self.resize(950, 700)
+        self.resize(950, 800)  # Slightly taller layout for process logs
 
-        self.initial_socket_path = initial_socket_path
+        self.generated_ipc_path = make_default_ipc_path()
+        if initial_socket_path == "/tmp/packet-probe.sock" or initial_socket_path == "":
+            self.initial_socket_path = self.generated_ipc_path
+        else:
+            self.initial_socket_path = initial_socket_path
+
         self.worker: IpcClientWorker | None = None
+        self.capture_process = CaptureProcess(self)
 
         self.is_paused = False
         self.pending_events: list[PacketEvent] = []
 
         self.setup_ui()
+
+        # Connect capture process signals
+        self.capture_process.started.connect(self.on_capture_started)
+        self.capture_process.stopped.connect(self.on_capture_stopped)
+        self.capture_process.error_occurred.connect(self.on_capture_error)
+        self.capture_process.stdout_received.connect(self.on_capture_stdout)
+        self.capture_process.stderr_received.connect(self.on_capture_stderr)
 
     def setup_ui(self):
         central_widget = QWidget(self)
@@ -40,9 +56,48 @@ class MainWindow(QMainWindow):
 
         main_layout = QVBoxLayout(central_widget)
 
-        ctrl_layout = QHBoxLayout()
+        # Capture Group Box
+        capture_group = QGroupBox("Capture", self)
+        capture_layout = QVBoxLayout(capture_group)
 
-        ctrl_layout.addWidget(QLabel("Socket Path:"))
+        # CLI Path
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(QLabel("CLI Path:", self))
+        default_cli = os.environ.get("PACKET_PROBE_CLI", "packet-probe")
+        self.cli_path_edit = QLineEdit(default_cli, self)
+        path_layout.addWidget(self.cli_path_edit)
+        self.browse_cli_btn = QPushButton("Browse", self)
+        self.browse_cli_btn.clicked.connect(self.browse_cli_path)
+        path_layout.addWidget(self.browse_cli_btn)
+        capture_layout.addLayout(path_layout)
+
+        # Args
+        args_layout = QHBoxLayout()
+        args_layout.addWidget(QLabel("Args:", self))
+        self.cli_args_edit = QLineEdit("udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl", self)
+        args_layout.addWidget(self.cli_args_edit)
+        capture_layout.addLayout(args_layout)
+
+        # Start/Stop buttons
+        capture_btn_layout = QHBoxLayout()
+        self.start_capture_btn = QPushButton("Start Capture", self)
+        self.start_capture_btn.clicked.connect(self.start_capture)
+        capture_btn_layout.addWidget(self.start_capture_btn)
+
+        self.stop_capture_btn = QPushButton("Stop Capture", self)
+        self.stop_capture_btn.setEnabled(False)
+        self.stop_capture_btn.clicked.connect(self.stop_capture)
+        capture_btn_layout.addWidget(self.stop_capture_btn)
+        capture_layout.addLayout(capture_btn_layout)
+
+        main_layout.addWidget(capture_group)
+
+        # IPC Group Box
+        ipc_group = QGroupBox("IPC", self)
+        ipc_layout = QVBoxLayout(ipc_group)
+
+        ctrl_layout = QHBoxLayout()
+        ctrl_layout.addWidget(QLabel("Socket Path:", self))
         self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
         ctrl_layout.addWidget(self.socket_path_edit)
 
@@ -65,7 +120,17 @@ class MainWindow(QMainWindow):
         self.open_log_btn.clicked.connect(self.open_log_file)
         ctrl_layout.addWidget(self.open_log_btn)
 
-        main_layout.addLayout(ctrl_layout)
+        ipc_layout.addLayout(ctrl_layout)
+        main_layout.addWidget(ipc_group)
+
+        # Process Output Group Box
+        process_group = QGroupBox("Process Output", self)
+        process_layout = QVBoxLayout(process_group)
+        self.process_output = QPlainTextEdit(self)
+        self.process_output.setReadOnly(True)
+        self.process_output.setMaximumHeight(100)
+        process_layout.addWidget(self.process_output)
+        main_layout.addWidget(process_group)
 
         # Menu bar
         menu_bar = self.menuBar()
@@ -202,7 +267,102 @@ class MainWindow(QMainWindow):
             self.hex_view.set_payload_hex(event.payload_hex)
             self.detail_view.set_event(event)
 
+    def browse_cli_path(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select packet-probe CLI executable",
+            "",
+            "Executables (*.exe *packet-probe*);;All Files (*)"
+        )
+        if path:
+            self.cli_path_edit.setText(path)
+
+    def start_capture(self):
+        executable = self.cli_path_edit.text().strip()
+        if not executable:
+            QMessageBox.warning(self, "Warning", "CLI Path is empty.")
+            return
+
+        args_text = self.cli_args_edit.text().strip()
+
+        from .ipc_path import make_default_ipc_path
+        self.generated_ipc_path = make_default_ipc_path()
+        self.socket_path_edit.setText(self.generated_ipc_path)
+
+        from .capture_command import build_capture_command
+        try:
+            cmd = build_capture_command(executable, args_text, self.generated_ipc_path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Warning", str(exc))
+            return
+
+        if self.worker and self.worker.isRunning():
+            self.disconnect_socket()
+
+        self.clear_all()
+        self.process_output.clear()
+
+        # Clean up existing socket at the path (Unix stale socket requirement)
+        from pathlib import Path
+        try:
+            Path(self.generated_ipc_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        self.process_output.appendPlainText(f"[system] Starting CLI: {cmd.executable} " + " ".join(cmd.args))
+        self.start_capture_btn.setEnabled(False)
+        self.stop_capture_btn.setEnabled(True)
+        self.cli_path_edit.setEnabled(False)
+        self.cli_args_edit.setEnabled(False)
+        self.browse_cli_btn.setEnabled(False)
+
+        try:
+            self.capture_process.start(cmd.executable, cmd.args)
+        except Exception as exc:
+            self.process_output.appendPlainText(f"[system] Failed to start process: {exc}")
+            self.on_capture_stopped(-1, "FailedToStart")
+
+    def stop_capture(self):
+        self.process_output.appendPlainText("[system] Stopping CLI process...")
+        self.capture_process.stop()
+        self.disconnect_socket()
+
+    def on_capture_started(self):
+        self.process_output.appendPlainText("[system] CLI process started successfully.")
+        QTimer.singleShot(300, self.connect_socket)
+
+    def on_capture_stopped(self, exit_code, exit_status):
+        self.process_output.appendPlainText(f"[system] CLI process stopped. Exit code: {exit_code} ({exit_status})")
+        self.start_capture_btn.setEnabled(True)
+        self.stop_capture_btn.setEnabled(False)
+        self.cli_path_edit.setEnabled(True)
+        self.cli_args_edit.setEnabled(True)
+        self.browse_cli_btn.setEnabled(True)
+        self.disconnect_socket()
+
+    def on_capture_error(self, msg):
+        self.process_output.appendPlainText(f"[stderr] Process error: {msg}")
+
+    def on_capture_stdout(self, data):
+        self.process_output.appendPlainText(f"[stdout] {data.strip()}")
+
+    def on_capture_stderr(self, data):
+        self.process_output.appendPlainText(f"[stderr] {data.strip()}")
+
     def open_log_file(self) -> None:
+        if self.capture_process.is_running():
+            reply = QMessageBox.question(
+                self,
+                "Capture Running",
+                "Capture is running. Stop capture and open log?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.stop_capture()
+            else:
+                return
+
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Packet Probe JSONL Log",
@@ -245,5 +405,6 @@ class MainWindow(QMainWindow):
             self.message_label.setText(msg)
 
     def closeEvent(self, event):
+        self.stop_capture()
         self.disconnect_socket()
         event.accept()

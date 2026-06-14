@@ -7,9 +7,9 @@ JSONL events in a table, hex view, and detail panel.
 
 ## Install
 
-The viewer depends on PySide6 and unilink-python.
+The viewer depends on PySide6. Live IPC stream subscription also requires `unilink-python` to be installed.
 
-For local development with sibling repositories:
+For local development with sibling repositories, we recommend a local install of `unilink-python`:
 
 ```sh
 python -m pip install -e ../unilink-python \
@@ -18,6 +18,8 @@ python -m pip install -e ../unilink-python \
 cd viewer
 python -m pip install -e .
 ```
+
+*Note: In the final packaged standalone executable distributions, the `unilink-python` native extension will be bundled automatically.*
 
 ## Run
 
@@ -80,11 +82,26 @@ File > Open Log...
 
 or the `Open Log` button.
 
+## Launch Packet Probe from the viewer
+
+The viewer can launch `packet-probe` directly.
+
+1. Set `CLI Path` to the `packet-probe` executable.
+2. Enter capture arguments without `--ipc`.
+3. Click `Start Capture`.
+
+Example args:
+
+```text
+udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
+```
+
+The viewer automatically generates an IPC socket path and appends `--ipc`.
+
 ## Limitations
 
 - read-only viewer
 - no command send
-- no capture start/stop
 - no replay
 - Unix Domain Socket IPC only for now
 - viewer currently keeps events in memory

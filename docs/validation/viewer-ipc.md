@@ -63,3 +63,20 @@ PY
 - Try connecting to a missing socket path repeatedly. The viewer should show connection errors and remain usable.
 - Connect to a running Packet Probe IPC socket, click Disconnect, then Connect again. The viewer should reconnect without restarting.
 - Close the viewer window while connected. The window should close without hanging.
+
+## Launcher validation
+
+Start `packet-probe-viewer`, enter:
+
+```text
+udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
+```
+
+Click `Start Capture`.
+
+Expected:
+
+* process output is visible
+* viewer connects automatically
+* UDP events appear in the table
+* Stop Capture terminates the process

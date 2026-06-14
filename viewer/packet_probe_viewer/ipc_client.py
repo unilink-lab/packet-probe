@@ -1,5 +1,4 @@
 import json
-import threading
 from PySide6.QtCore import QThread, Signal, QObject
 
 try:
