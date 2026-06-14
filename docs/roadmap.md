@@ -49,6 +49,7 @@
 - core event stream server
 - JSONL over UDS
 - read-only viewer protocol
+- TCP Server Direct Mode
 
 ## MVP-8
 

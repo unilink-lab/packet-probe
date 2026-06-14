@@ -82,5 +82,27 @@ int main() {
                            "--target-host", "127.0.0.1", "--target-port", "9100"});
   packet_probe::cli::validate_options(udp_target);
 
+  // tcp-server validation tests
+  assert(throws_invalid_argument([] {
+    auto options = parse({"packet-probe", "tcp-server", "--listen-port", "9000"});
+    packet_probe::cli::validate_options(options);
+  }));
+
+  assert(throws_invalid_argument([] {
+    auto options = parse({"packet-probe", "tcp-server", "--listen-host", "127.0.0.1"});
+    packet_probe::cli::validate_options(options);
+  }));
+
+  auto tcp_server_valid = parse({"packet-probe", "tcp-server", "--listen-host", "127.0.0.1", "--listen-port", "9000"});
+  packet_probe::cli::validate_options(tcp_server_valid);
+
+  auto tcp_server_send_hex = parse({"packet-probe", "tcp-server", "--listen-host", "127.0.0.1", "--listen-port", "9000", "--send-hex"});
+  assert(tcp_server_send_hex.send_options.format == packet_probe::SendInputFormat::Hex);
+  packet_probe::cli::validate_options(tcp_server_send_hex);
+
+  auto tcp_server_ipc = parse({"packet-probe", "tcp-server", "--listen-host", "127.0.0.1", "--listen-port", "9000", "--ipc", "/tmp/packet-probe.sock"});
+  assert(tcp_server_ipc.ipc_path == "/tmp/packet-probe.sock");
+  packet_probe::cli::validate_options(tcp_server_ipc);
+
   return 0;
 }

@@ -9,6 +9,7 @@ set(PACKET_PROBE_CLI_RUN_SOURCES
     run_common.cpp
     run_tcp_client.cpp
     run_tcp_proxy.cpp
+    run_tcp_server.cpp
     run_serial.cpp
     run_udp.cpp
 )

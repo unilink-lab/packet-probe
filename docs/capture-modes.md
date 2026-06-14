@@ -7,6 +7,7 @@ Packet Probe connects directly to a target device.
 Direct Mode is implemented for:
 
 - TCP client sessions
+- TCP server sessions
 - Serial sessions
 - UDP datagram sessions
 

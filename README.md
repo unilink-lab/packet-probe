@@ -82,6 +82,7 @@ channel between Packet Probe Core and a future viewer.
 Implemented:
 
 - TCP Direct Mode
+- TCP Server Direct Mode
 - TCP Proxy Mode
 - Serial Direct Mode
 - UDP Direct Mode
@@ -128,6 +129,7 @@ packet-probe --version
 packet-probe tcp-client --host 127.0.0.1 --port 9000
 packet-probe tcp-client --host 127.0.0.1 --port 9000 --hex
 packet-probe tcp-client --host 127.0.0.1 --port 9000 --log capture.jsonl --hex
+packet-probe tcp-server --listen-host 0.0.0.0 --listen-port 9000 --log tcp-server.jsonl --hex
 packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --hex
 packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
 packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
@@ -168,6 +170,28 @@ JSONL event example:
 
 ```json
 {"seq":1,"parent_seq":0,"time_ns":1781234567890,"session":"tcp-client-1","transport":"tcp","direction":"device_to_app","type":"raw_bytes","size":6,"payload_hex":"0210010003A7","summary":"RX 6 bytes"}
+```
+
+## TCP Server Mode
+
+TCP Server Mode lets Packet Probe listen for a remote TCP client and inspect the
+communication session.
+
+```text
+[Target Device / App TCP Client] -> [Packet Probe TCP Server]
+```
+
+MVP tcp-server mode accepts one client connection per process run.
+Restart packet-probe to accept a new session after disconnect.
+
+Example:
+
+```sh
+packet-probe tcp-server \
+  --listen-host 0.0.0.0 \
+  --listen-port 9000 \
+  --log tcp-server.jsonl \
+  --hex
 ```
 
 ## TCP Proxy Mode

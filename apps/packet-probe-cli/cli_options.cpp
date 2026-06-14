@@ -132,6 +132,15 @@ void validate_options(CliOptions const& options) {
     }
     return;
   }
+  if (options.mode == "tcp-server") {
+    if (options.listen_host.empty()) {
+      throw std::invalid_argument("tcp-server requires --listen-host");
+    }
+    if (options.listen_port == 0) {
+      throw std::invalid_argument("tcp-server requires --listen-port");
+    }
+    return;
+  }
   if (options.mode == "tcp-proxy") {
     if (options.listen_host.empty()) {
       throw std::invalid_argument("tcp-proxy requires --listen-host");

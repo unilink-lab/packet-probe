@@ -22,6 +22,9 @@ int run_mode(packet_probe::cli::CliOptions const& options) {
   if (options.mode == "tcp-client") {
     return run_tcp_client(options, stop_requested);
   }
+  if (options.mode == "tcp-server") {
+    return run_tcp_server(options, stop_requested);
+  }
   if (options.mode == "tcp-proxy") {
     return run_tcp_proxy(options, stop_requested);
   }

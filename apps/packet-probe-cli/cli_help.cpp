@@ -8,6 +8,7 @@ void print_help(std::ostream& out) {
   out << "Usage:\n"
       << "  packet-probe [--help] [--version]\n"
       << "  packet-probe tcp-client --host <host> --port <port> [--log <path>] [--ipc <path>] [--hex]\n"
+      << "  packet-probe tcp-server --listen-host <host> --listen-port <port> [--log <path>] [--ipc <path>] [--hex]\n"
       << "  packet-probe tcp-proxy --listen-host <host> --listen-port <port> "
          "--target-host <host> --target-port <port> [--log <path>] [--ipc <path>] [--hex] [--latency]\n"
       << "  packet-probe serial --port <path> --baudrate <rate> [--log <path>] [--ipc <path>] [--hex]\n"
@@ -16,6 +17,7 @@ void print_help(std::ostream& out) {
       << "\n"
       << "Modes:\n"
       << "  tcp-client    Connect directly to a TCP target device\n"
+      << "  tcp-server    Listen for a remote TCP client connection\n"
       << "  tcp-proxy     Listen locally and proxy one TCP client to a target device\n"
       << "  serial        Connect directly to a serial target device\n"
       << "  udp           Bind a UDP socket and inspect datagrams\n"
@@ -52,6 +54,24 @@ void print_help(std::ostream& out) {
       << "  --latency         Enable heuristic request/response latency events\n"
       << "  --help            Show this help\n"
       << "  --version         Show version\n";
+}
+
+void print_tcp_server_help(std::ostream& out) {
+  out << "Usage:\n"
+      << "  packet-probe tcp-server --listen-host <host> --listen-port <port> [options]\n"
+      << "\n"
+      << "Options:\n"
+      << "  --listen-host <host>  Local listen host\n"
+      << "  --listen-port <port>  Local listen port\n"
+      << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
+      << "  --send-text           Send stdin lines as text bytes, default\n"
+      << "  --send-hex            Parse stdin lines as hex bytes before sending\n"
+      << "  --send-file <path>    Send one binary file payload and exit\n"
+      << "  --log <path>          Write events as JSONL\n"
+      << "  --ipc <path>          Broadcast events as JSONL over a Unix Domain Socket\n"
+      << "  --hex                 Print one-line hex output for raw byte events\n"
+      << "  --hex-frame           Print one-line hex output for frame events\n"
+      << "  --help                Show this help\n";
 }
 
 void print_tcp_proxy_help(std::ostream& out) {
@@ -117,7 +137,9 @@ void print_udp_help(std::ostream& out) {
 }
 
 void print_help_for_mode(std::ostream& out, CliOptions const& options) {
-  if (options.mode == "tcp-proxy") {
+  if (options.mode == "tcp-server") {
+    print_tcp_server_help(out);
+  } else if (options.mode == "tcp-proxy") {
     print_tcp_proxy_help(out);
   } else if (options.mode == "serial") {
     print_serial_help(out);

@@ -59,6 +59,7 @@ if(PACKET_PROBE_USE_UNILINK)
     packet_probe_capture
     src/capture/tcp_direct_capture_session.cpp
     src/capture/tcp_proxy_capture_session.cpp
+    src/capture/tcp_server_capture_session.cpp
     src/capture/serial_direct_capture_session.cpp
     src/capture/udp_direct_capture_session.cpp
   )
