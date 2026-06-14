@@ -7,13 +7,15 @@ Unix Domain Socket IPC using JSONL message boundaries.
 
 ## Requirements
 
-- Unix-like system
+- Linux, macOS, or Windows
 - `packet-probe` built locally
-- `socat` for manual client connection
+- Connection tool (`socat` for Linux/macOS, or Python/other UDS client for Windows)
 
 ## Setup
 
 Start Packet Probe with UDP capture and IPC enabled:
+
+### Linux/macOS:
 
 ```sh
 packet-probe udp \
@@ -22,6 +24,20 @@ packet-probe udp \
   --ipc /tmp/packet-probe.sock \
   --log udp.jsonl
 ```
+
+### Windows:
+
+```powershell
+packet-probe udp `
+  --bind-host 127.0.0.1 `
+  --bind-port 19000 `
+  --ipc .\packet-probe.sock `
+  --log udp.jsonl
+```
+
+## Windows Note
+
+IPC is implemented through the unilink UDS transport. On Windows, use a short socket path in a writable local directory when validating packaged or command-line builds.
 
 ## Connect A Viewer Client
 
@@ -75,4 +91,4 @@ continue capturing while clients disconnect and reconnect.
   not a directory or regular file.
 - If no event arrives, confirm traffic is sent to the configured bind host and
   bind port.
-- UDS IPC is currently supported on Unix-like systems only.
+- UDS IPC platform support follows the underlying unilink core and OS UDS/AF_UNIX support.

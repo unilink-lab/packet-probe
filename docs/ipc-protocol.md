@@ -15,14 +15,18 @@ UDS capture mode and UDS IPC are separate features.
   and a future viewer.
 
 UDS capture mode is not implemented yet. UDS IPC event streaming is implemented
-for Unix-like systems.
+using the unilink UDS transport.
 
 ## Transport
 
-The initial transport is Unix Domain Socket with `SOCK_STREAM`.
+Packet Probe IPC uses the unilink UDS transport.
 
-UDS IPC is currently supported on Unix-like systems. Windows viewer integration
-may use TCP loopback or named pipes in a future version.
+The protocol is newline-delimited JSON over a local byte stream. Each viewer
+client receives one metadata line on connection, followed by event JSON lines.
+
+Windows support depends on the underlying unilink UDS implementation and OS
+support. TCP loopback or named pipes may be considered later only if UDS support
+is insufficient for packaged applications.
 
 ## CLI Usage
 

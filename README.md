@@ -264,6 +264,9 @@ Packet Probe includes an optional PySide6-based read-only viewer under `viewer/`
 The viewer connects to Packet Probe's UDS IPC event stream and displays packet
 events in a table with hex and JSON detail views.
 
+Packet Probe IPC is implemented through the unilink UDS transport. The viewer is
+planned to use the unilink-python UDS client support for the same IPC stream.
+
 See [viewer/README.md](viewer/README.md) for viewer installation and usage.
 
 PySide6 and Qt are not vendored in this repository. See

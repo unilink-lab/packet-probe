@@ -41,6 +41,11 @@ add_executable(test_ipc_protocol test_ipc_protocol.cpp)
 target_link_libraries(test_ipc_protocol PRIVATE packet_probe::core)
 add_test(NAME test_ipc_protocol COMMAND test_ipc_protocol)
 
+add_executable(test_ipc_event_server test_ipc_event_server.cpp)
+target_include_directories(test_ipc_event_server PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(test_ipc_event_server PRIVATE packet_probe::core unilink::unilink)
+add_test(NAME test_ipc_event_server COMMAND test_ipc_event_server)
+
 add_executable(test_public_headers test_public_headers.cpp)
 target_link_libraries(test_public_headers PRIVATE packet_probe::core)
 add_test(NAME test_public_headers COMMAND test_public_headers)
