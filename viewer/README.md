@@ -35,32 +35,29 @@ python -m pip install -e ".[test]"
 python -m pytest
 ```
 
-## Example with Packet Probe
+## Connect to an existing Packet Probe process
 
-Terminal 1:
-
-```sh
-packet-probe udp \
-  --bind-host 127.0.0.1 \
-  --bind-port 19000 \
-  --ipc /tmp/packet-probe.sock \
-  --log udp.jsonl
-```
-
-Terminal 2:
+Use this when `packet-probe` is already running with `--ipc`.
 
 ```sh
+packet-probe udp --bind-host 127.0.0.1 --bind-port 19000 --ipc /tmp/packet-probe.sock
 packet-probe-viewer --socket /tmp/packet-probe.sock
 ```
 
-Terminal 3:
+## Launch Packet Probe from the viewer
 
-```sh
-python3 - <<'PY'
-import socket
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.sendto(b"hello", ("127.0.0.1", 19000))
-PY
+Use this when you want the viewer to start `packet-probe` for you.
+
+Do not include `--ipc` or `--ipc=` in the args field. The viewer generates and appends it automatically.
+
+1. Set `CLI Path` to the `packet-probe` executable.
+2. Enter capture arguments.
+3. Click `Start Capture`.
+
+Example args:
+
+```text
+udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
 ```
 
 ## Open a JSONL log
@@ -82,21 +79,6 @@ File > Open Log...
 
 or the `Open Log` button.
 
-## Launch Packet Probe from the viewer
-
-The viewer can launch `packet-probe` directly.
-
-1. Set `CLI Path` to the `packet-probe` executable.
-2. Enter capture arguments without `--ipc`.
-3. Click `Start Capture`.
-
-Example args:
-
-```text
-udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
-```
-
-The viewer automatically generates an IPC socket path and appends `--ipc`.
 
 ## Limitations
 

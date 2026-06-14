@@ -23,3 +23,16 @@ def test_build_capture_command_rejects_manual_ipc():
             "udp --bind-port 19000 --ipc /tmp/custom.sock",
             "/tmp/pp.sock"
         )
+
+def test_parse_capture_args_with_quoted_value():
+    args = parse_capture_args('udp --log "my capture.jsonl"')
+    assert args == ["udp", "--log", "my capture.jsonl"]
+
+def test_build_capture_command_rejects_manual_ipc_equals_form():
+    with pytest.raises(ValueError):
+        build_capture_command(
+            "packet-probe",
+            "udp --bind-port 19000 --ipc=/tmp/custom.sock",
+            "/tmp/pp.sock"
+        )
+

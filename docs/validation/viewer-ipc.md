@@ -21,40 +21,45 @@ cd viewer
 python -m pip install -e .
 ```
 
-## Start Packet Probe
+## Existing socket validation
 
-```sh
-packet-probe udp \
-  --bind-host 127.0.0.1 \
-  --bind-port 19000 \
-  --ipc /tmp/packet-probe.sock \
-  --log udp.jsonl
-```
+### Steps
 
-## Start viewer
+1. Start Packet Probe manually:
 
-```sh
-packet-probe-viewer --socket /tmp/packet-probe.sock
-```
+   ```sh
+   packet-probe udp \
+     --bind-host 127.0.0.1 \
+     --bind-port 19000 \
+     --ipc /tmp/packet-probe.sock \
+     --log udp.jsonl
+   ```
 
-## Send test UDP datagram
+2. Start the viewer:
 
-```sh
-python3 - <<'PY'
-import socket
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", 19000))
-PY
-```
+   ```sh
+   packet-probe-viewer --socket /tmp/packet-probe.sock
+   ```
 
-## Expected result
+3. Send a test UDP datagram:
 
+   ```sh
+   python3 - <<'PY'
+   import socket
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", 19000))
+   PY
+   ```
+
+### Expected results
+
+* The socket path field displays `/tmp/packet-probe.sock` without being overwritten by an auto-generated path.
 * Viewer status changes to connected.
 * Event table shows a `device_to_app` raw_bytes event.
 * Selecting the row shows payload hex.
 * Event detail panel shows raw JSON.
 
-## Additional checks
+### Additional checks
 
 - Start the viewer before Packet Probe and click Connect. The viewer should show a connection error and remain usable.
 - Start Packet Probe, connect the viewer, then stop Packet Probe. The viewer should switch to disconnected state.
@@ -66,17 +71,43 @@ PY
 
 ## Launcher validation
 
-Start `packet-probe-viewer`, enter:
+### Steps
 
-```text
-udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
-```
+1. Start the viewer without any argument:
 
-Click `Start Capture`.
+   ```sh
+   packet-probe-viewer
+   ```
 
-Expected:
+2. Set CLI Path to the built `packet-probe` executable.
+3. Enter capture arguments:
 
-* process output is visible
-* viewer connects automatically
-* UDP events appear in the table
-* Stop Capture terminates the process
+   ```text
+   udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
+   ```
+
+4. Click `Start Capture`.
+5. Send a test UDP datagram:
+
+   ```sh
+   python3 - <<'PY'
+   import socket
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.sendto(bytes.fromhex("02 10 01 00 03 A7"), ("127.0.0.1", 19000))
+   PY
+   ```
+
+### Expected results
+
+* When clicking `Start Capture`, the viewer generates an IPC socket path and updates the Socket Path field.
+* Process output from the CLI process is printed to the process output pane (without empty `[stdout]` or `[stderr]` prefixes).
+* The viewer automatically attempts to connect to the generated IPC socket and succeeds (using the retry loop).
+* UDP events appear in the table.
+* Clicking `Stop Capture` terminates the process.
+
+### Additional checks
+
+- Stop Capture: Verify that capture retries are halted immediately when `Stop Capture` is clicked or the process stops.
+- Start Failure: Try to start capture with an invalid executable path. Verify that UI controls (e.g. Start Capture button) are properly restored when the process fails to start.
+- IPC Argument rejection: Try to include `--ipc` or `--ipc=value` in the capture arguments. Verify that the viewer displays a warning dialog and refuses to start the capture.
+

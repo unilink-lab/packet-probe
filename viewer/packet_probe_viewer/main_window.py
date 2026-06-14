@@ -11,7 +11,7 @@ from .packet_table_model import PacketTableModel
 from .widgets.hex_view import HexView
 from .widgets.event_detail import EventDetailView
 from .jsonl_log_loader import load_packet_probe_jsonl
-from .ipc_path import make_default_ipc_path
+from .ipc_path import make_default_ipc_path, resolve_initial_socket_path
 from .capture_process import CaptureProcess
 
 def format_metadata_message(metadata: dict | None) -> str:
@@ -30,13 +30,14 @@ class MainWindow(QMainWindow):
         self.resize(950, 800)  # Slightly taller layout for process logs
 
         self.generated_ipc_path = make_default_ipc_path()
-        if initial_socket_path == "/tmp/packet-probe.sock" or initial_socket_path == "":
-            self.initial_socket_path = self.generated_ipc_path
-        else:
-            self.initial_socket_path = initial_socket_path
+        self.initial_socket_path = resolve_initial_socket_path(initial_socket_path)
 
         self.worker: IpcClientWorker | None = None
         self.capture_process = CaptureProcess(self)
+
+        self._launcher_connect_pending = False
+        self._launcher_connect_attempts = 0
+        self._launcher_connect_max_attempts = 30
 
         self.is_paused = False
         self.pending_events: list[PacketEvent] = []
@@ -197,6 +198,7 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def disconnect_socket(self):
+        self._launcher_connect_pending = False
         if self.worker:
             self.worker.stop()
             self.worker = None
@@ -208,6 +210,7 @@ class MainWindow(QMainWindow):
             self.connect_btn.setText("Connecting...")
             self.message_label.setText("")
         elif status == "connected":
+            self._launcher_connect_pending = False
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Disconnect")
             self.socket_path_edit.setEnabled(False)
@@ -235,6 +238,41 @@ class MainWindow(QMainWindow):
     def on_worker_finished(self):
         self.on_status_changed("disconnected")
         self.worker = None
+
+        if self._launcher_connect_pending and self.capture_process.is_running():
+            if self._launcher_connect_attempts < self._launcher_connect_max_attempts:
+                QTimer.singleShot(100, self._try_launcher_connect)
+            else:
+                self._launcher_connect_pending = False
+                self.message_label.setText("Error: IPC socket was not ready after launcher retry timeout")
+
+    def _try_launcher_connect(self):
+        if not self._launcher_connect_pending:
+            return
+        if not self.capture_process.is_running():
+            self._launcher_connect_pending = False
+            return
+        if self.worker and self.worker.isRunning():
+            return
+
+        socket_path = self.socket_path_edit.text().strip()
+        if not socket_path:
+            self._launcher_connect_pending = False
+            self.message_label.setText("Error: generated IPC socket path is empty")
+            return
+
+        self._launcher_connect_attempts += 1
+        self.connect_socket()
+
+    def _set_capture_controls_running(self, running: bool):
+        self.start_capture_btn.setEnabled(not running)
+        self.stop_capture_btn.setEnabled(running)
+        self.cli_path_edit.setEnabled(not running)
+        self.cli_args_edit.setEnabled(not running)
+        self.browse_cli_btn.setEnabled(not running)
+
+    def _restore_capture_controls(self):
+        self._set_capture_controls_running(False)
 
     def toggle_pause(self):
         if self.is_paused:
@@ -310,11 +348,7 @@ class MainWindow(QMainWindow):
             pass
 
         self.process_output.appendPlainText(f"[system] Starting CLI: {cmd.executable} " + " ".join(cmd.args))
-        self.start_capture_btn.setEnabled(False)
-        self.stop_capture_btn.setEnabled(True)
-        self.cli_path_edit.setEnabled(False)
-        self.cli_args_edit.setEnabled(False)
-        self.browse_cli_btn.setEnabled(False)
+        self._set_capture_controls_running(True)
 
         try:
             self.capture_process.start(cmd.executable, cmd.args)
@@ -323,31 +357,38 @@ class MainWindow(QMainWindow):
             self.on_capture_stopped(-1, "FailedToStart")
 
     def stop_capture(self):
+        self._launcher_connect_pending = False
         self.process_output.appendPlainText("[system] Stopping CLI process...")
         self.capture_process.stop()
         self.disconnect_socket()
 
     def on_capture_started(self):
         self.process_output.appendPlainText("[system] CLI process started successfully.")
-        QTimer.singleShot(300, self.connect_socket)
+        self._launcher_connect_pending = True
+        self._launcher_connect_attempts = 0
+        QTimer.singleShot(100, self._try_launcher_connect)
 
     def on_capture_stopped(self, exit_code, exit_status):
+        self._launcher_connect_pending = False
         self.process_output.appendPlainText(f"[system] CLI process stopped. Exit code: {exit_code} ({exit_status})")
-        self.start_capture_btn.setEnabled(True)
-        self.stop_capture_btn.setEnabled(False)
-        self.cli_path_edit.setEnabled(True)
-        self.cli_args_edit.setEnabled(True)
-        self.browse_cli_btn.setEnabled(True)
+        self._restore_capture_controls()
         self.disconnect_socket()
 
     def on_capture_error(self, msg):
         self.process_output.appendPlainText(f"[stderr] Process error: {msg}")
+        if not self.capture_process.is_running():
+            self._launcher_connect_pending = False
+            self._restore_capture_controls()
 
     def on_capture_stdout(self, data):
-        self.process_output.appendPlainText(f"[stdout] {data.strip()}")
+        text = data.rstrip()
+        if text:
+            self.process_output.appendPlainText(f"[stdout] {text}")
 
     def on_capture_stderr(self, data):
-        self.process_output.appendPlainText(f"[stderr] {data.strip()}")
+        text = data.rstrip()
+        if text:
+            self.process_output.appendPlainText(f"[stderr] {text}")
 
     def open_log_file(self) -> None:
         if self.capture_process.is_running():
