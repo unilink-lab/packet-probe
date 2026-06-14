@@ -42,6 +42,20 @@ MVP-3 adds:
 - serial JSONL recording
 - serial manual validation guidance
 
+MVP-4 adds:
+
+- UDP Direct Mode
+- UDP bind host and port configuration
+- datagram endpoint metadata
+- UDP JSONL recording
+
+MVP-5 adds:
+
+- FrameDecoder interface
+- raw, fixed-size, delimiter, and length-prefix frame decoders
+- frame events with `parent_seq`
+- shared event pipeline for raw and frame recording
+
 ## What Packet Probe is not
 
 Packet Probe does not capture arbitrary OS-level network traffic like Wireshark or tcpdump.
@@ -56,11 +70,17 @@ Implemented:
 - `packet-probe tcp-client`
 - `packet-probe tcp-proxy`
 - `packet-probe serial`
+- `packet-probe udp`
 - `PacketEvent`
 - `CaptureSession`
 - `TcpDirectCaptureSession`
 - `TcpProxyCaptureSession`
 - `SerialDirectCaptureSession`
+- `UdpDirectCaptureSession`
+- `FrameDecoder` interface
+- `MessageDecoder` extension interface
+- raw/fixed/delimiter/length-prefix frame decoders
+- frame events
 - `JsonlRecorder`
 - `LatencyTracker`
 - endpoint metadata
@@ -70,7 +90,8 @@ Not implemented yet:
 
 - PyQt viewer
 - UDS IPC
-- UDP or UDS capture modes
+- UDS capture modes
+- protocol-specific message decoder
 - decoder plugin system
 
 ## Build
@@ -101,6 +122,7 @@ packet-probe tcp-client --host 127.0.0.1 --port 9000 --hex
 packet-probe tcp-client --host 127.0.0.1 --port 9000 --log capture.jsonl --hex
 packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 --hex
 packet-probe serial --port COM3 --baudrate 115200 --log serial.jsonl --hex
+packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
 ```
 
 In `tcp-client` mode, lines typed on stdin are sent to the target as raw bytes and
@@ -109,7 +131,7 @@ recorded as TX events. Bytes received from the target are recorded as RX events.
 JSONL event example:
 
 ```json
-{"seq":1,"time_ns":1781234567890,"session":"tcp-client-1","transport":"tcp","direction":"device_to_app","type":"raw_bytes","size":6,"payload_hex":"0210010003A7","summary":"RX 6 bytes"}
+{"seq":1,"parent_seq":0,"time_ns":1781234567890,"session":"tcp-client-1","transport":"tcp","direction":"device_to_app","type":"raw_bytes","size":6,"payload_hex":"0210010003A7","summary":"RX 6 bytes"}
 ```
 
 ## TCP Proxy Mode
@@ -185,6 +207,33 @@ Supported serial options:
 MVP-3 sends stdin lines as raw text bytes. Hex command input will be added later.
 
 Manual validation options are documented in [docs/serial-validation.md](docs/serial-validation.md).
+
+## UDP Direct Mode
+
+UDP Direct Mode binds a UDP socket and records received datagrams.
+
+```sh
+packet-probe udp --bind-host 0.0.0.0 --bind-port 9000 --log udp.jsonl --hex
+```
+
+If `--target-host` and `--target-port` are provided, stdin lines are sent as UDP
+datagrams to that target and recorded as `app_to_device` events.
+
+## Frame Decoders
+
+By default, Packet Probe uses `--decoder raw`, which treats each raw payload as one
+frame. TCP and Serial streams can use boundary-oriented decoders:
+
+```sh
+packet-probe serial --port /dev/ttyUSB0 --baudrate 115200 \
+  --decoder delimiter --delimiter 0A --log serial.jsonl --hex-frame
+
+packet-probe tcp-client --host 127.0.0.1 --port 9000 \
+  --decoder length-prefix --length-size 2 --length-endian big
+```
+
+`--hex` prints raw byte events. Use `--hex-frame` to also print frame events.
+Decoder details are documented in [docs/decoders.md](docs/decoders.md).
 
 ## Roadmap
 

@@ -29,8 +29,12 @@
 
 ## MVP-5
 
-- basic frame decoder
-- decoder interface
+- FrameDecoder interface
+- raw frame decoder
+- fixed-size frame decoder
+- delimiter frame decoder
+- length-prefix frame decoder
+- frame PacketEvent
 
 ## MVP-6
 

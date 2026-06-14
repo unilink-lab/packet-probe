@@ -17,3 +17,11 @@ add_test(NAME test_packet_event_direction COMMAND test_packet_event_direction)
 add_executable(test_serial_options test_serial_options.cpp)
 target_link_libraries(test_serial_options PRIVATE packet_probe::core)
 add_test(NAME test_serial_options COMMAND test_serial_options)
+
+add_executable(test_frame_decoders test_frame_decoders.cpp)
+target_link_libraries(test_frame_decoders PRIVATE packet_probe::core)
+add_test(NAME test_frame_decoders COMMAND test_frame_decoders)
+
+add_executable(test_event_pipeline test_event_pipeline.cpp)
+target_link_libraries(test_event_pipeline PRIVATE packet_probe::core)
+add_test(NAME test_event_pipeline COMMAND test_event_pipeline)

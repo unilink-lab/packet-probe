@@ -8,6 +8,7 @@ Direct Mode is implemented for:
 
 - TCP client sessions
 - Serial sessions
+- UDP datagram sessions
 
 ## 2. Proxy Mode
 

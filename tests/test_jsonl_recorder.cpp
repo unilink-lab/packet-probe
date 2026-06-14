@@ -27,7 +27,7 @@ int main() {
 
   auto line = packet_probe::serialize_jsonl(event);
   assert(line ==
-         "{\"seq\":1,\"time_ns\":1781234567890,\"session\":\"tcp-client-1\",\"transport\":\"tcp\","
+         "{\"seq\":1,\"parent_seq\":0,\"time_ns\":1781234567890,\"session\":\"tcp-client-1\",\"transport\":\"tcp\","
          "\"direction\":\"rx\",\"type\":\"raw_bytes\",\"size\":6,\"payload_hex\":\"0210010003A7\","
          "\"summary\":\"RX 6 bytes\"}");
 
@@ -93,6 +93,17 @@ int main() {
   assert(serial_line.find("\"source\":\"/dev/ttyUSB0\"") != std::string::npos);
   assert(serial_line.find("\"destination\":\"packet-probe\"") != std::string::npos);
   assert(serial_line.find("\"payload_hex\":\"0210010003A7\"") != std::string::npos);
+
+  auto frame = base_event();
+  frame.sequence = 15;
+  frame.parent_sequence = 14;
+  frame.type = packet_probe::EventType::Frame;
+  frame.payload = {0xAA, 0xBB};
+  frame.summary = "FRAME 2 bytes";
+  auto frame_line = packet_probe::serialize_jsonl(frame);
+  assert(frame_line.find("\"seq\":15") != std::string::npos);
+  assert(frame_line.find("\"parent_seq\":14") != std::string::npos);
+  assert(frame_line.find("\"type\":\"frame\"") != std::string::npos);
 
   return 0;
 }

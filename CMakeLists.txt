@@ -21,6 +21,12 @@ add_library(
   src/core/endpoint.cpp
   src/core/latency_tracker.cpp
   src/core/serial_options.cpp
+  src/core/event_pipeline.cpp
+  src/decoder/frame_decoder.cpp
+  src/decoder/fixed_size_frame_decoder.cpp
+  src/decoder/delimiter_frame_decoder.cpp
+  src/decoder/length_prefix_frame_decoder.cpp
+  src/decoder/frame_decoder_factory.cpp
   src/recorder/jsonl_recorder.cpp
 )
 add_library(packet_probe::core ALIAS packet_probe_core)
@@ -48,6 +54,7 @@ if(PACKET_PROBE_USE_UNILINK)
     src/capture/tcp_direct_capture_session.cpp
     src/capture/tcp_proxy_capture_session.cpp
     src/capture/serial_direct_capture_session.cpp
+    src/capture/udp_direct_capture_session.cpp
   )
   add_library(packet_probe::capture ALIAS packet_probe_capture)
   target_compile_features(packet_probe_capture PUBLIC cxx_std_20)

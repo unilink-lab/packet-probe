@@ -26,6 +26,7 @@ enum class EventType {
 
 struct PacketEvent {
   std::uint64_t sequence = 0;
+  std::uint64_t parent_sequence = 0;
   std::int64_t timestamp_ns = 0;
 
   std::string session_id;

@@ -17,10 +17,13 @@
 #endif
 
 #include "packet_probe/hex_dump.hpp"
+#include "packet_probe/event_pipeline.hpp"
+#include "packet_probe/frame_decoder_factory.hpp"
 #include "packet_probe/jsonl_recorder.hpp"
 #include "packet_probe/serial_direct_capture_session.hpp"
 #include "packet_probe/tcp_direct_capture_session.hpp"
 #include "packet_probe/tcp_proxy_capture_session.hpp"
+#include "packet_probe/udp_direct_capture_session.hpp"
 #include "packet_probe/version.hpp"
 
 namespace {
@@ -41,10 +44,14 @@ struct CliOptions {
   packet_probe::SerialFlowControl flow_control = packet_probe::SerialFlowControl::None;
   std::string listen_host;
   std::uint16_t listen_port = 0;
+  std::string bind_host = "0.0.0.0";
+  std::uint16_t bind_port = 0;
   std::string target_host;
   std::uint16_t target_port = 0;
   std::string log_path;
-  bool hex = false;
+  packet_probe::DecoderConfig decoder_config;
+  bool hex_raw = false;
+  bool hex_frame = false;
   bool latency = true;
   bool help = false;
   bool version = false;
@@ -57,26 +64,40 @@ void print_help(std::ostream& out) {
       << "  packet-probe tcp-proxy --listen-host <host> --listen-port <port> "
          "--target-host <host> --target-port <port> [--log <path>] [--hex] [--latency]\n"
       << "  packet-probe serial --port <path> --baudrate <rate> [--log <path>] [--hex]\n"
+      << "  packet-probe udp --bind-host <host> --bind-port <port> [--target-host <host>] "
+         "[--target-port <port>] [--log <path>] [--hex]\n"
       << "\n"
       << "Modes:\n"
       << "  tcp-client    Connect directly to a TCP target device\n"
       << "  tcp-proxy     Listen locally and proxy one TCP client to a target device\n"
       << "  serial        Connect directly to a serial target device\n"
+      << "  udp           Bind a UDP socket and inspect datagrams\n"
       << "\n"
       << "Options:\n"
       << "  --host <host>     Target host for tcp-client mode\n"
       << "  --port <port>     Target TCP port for tcp-client mode\n"
       << "  --listen-host <host>  Local listen host for tcp-proxy mode\n"
       << "  --listen-port <port>  Local listen port for tcp-proxy mode\n"
-      << "  --target-host <host>  Target host for tcp-proxy mode\n"
-      << "  --target-port <port>  Target port for tcp-proxy mode\n"
+      << "  --bind-host <host>    UDP bind host, default: 0.0.0.0\n"
+      << "  --bind-port <port>    UDP bind port\n"
+      << "  --target-host <host>  Target host for tcp-proxy or UDP send mode\n"
+      << "  --target-port <port>  Target port for tcp-proxy or UDP send mode\n"
       << "  --baudrate <rate>     Serial baudrate for serial mode\n"
       << "  --data-bits <5|6|7|8> Serial data bits, default: 8\n"
       << "  --stop-bits <1|2>     Serial stop bits, default: 1\n"
       << "  --parity <none|odd|even>  Serial parity, default: none\n"
       << "  --flow-control <none|software|hardware>  Serial flow control, default: none\n"
+      << "  --decoder <raw|fixed|delimiter|length-prefix>  Frame decoder, default: raw\n"
+      << "  --frame-size <bytes>  Fixed-size frame length\n"
+      << "  --delimiter <hex|CRLF|LF>  Delimiter frame boundary\n"
+      << "  --include-delimiter   Include delimiter in delimiter frames, default: enabled\n"
+      << "  --length-size <1|2|4> Length-prefix field size, default: 2\n"
+      << "  --length-endian <little|big>  Length-prefix endian, default: big\n"
+      << "  --length-includes-header  Length includes the prefix bytes\n"
       << "  --log <path>      Write events as JSONL\n"
       << "  --hex             Print one-line hex output for raw byte events\n"
+      << "  --hex-raw         Print one-line hex output for raw byte events\n"
+      << "  --hex-frame       Print one-line hex output for frame events\n"
       << "  --latency         Enable heuristic request/response latency events\n"
       << "  --help            Show this help\n"
       << "  --version         Show version\n";
@@ -92,8 +113,10 @@ void print_tcp_proxy_help(std::ostream& out) {
       << "  --listen-port <port>  Local listen port\n"
       << "  --target-host <host>  Target device host\n"
       << "  --target-port <port>  Target device TCP port\n"
+      << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
       << "  --log <path>          Write events as JSONL\n"
       << "  --hex                 Print one-line hex output for raw byte events\n"
+      << "  --hex-frame           Print one-line hex output for frame events\n"
       << "  --latency             Enable heuristic request/response latency events\n"
       << "  --help                Show this help\n";
 }
@@ -109,8 +132,27 @@ void print_serial_help(std::ostream& out) {
       << "  --stop-bits <1|2>          Stop bits, default: 1\n"
       << "  --parity <none|odd|even>   Parity, default: none\n"
       << "  --flow-control <none|software|hardware>\n"
+      << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
+      << "  --delimiter <hex|CRLF|LF>  Delimiter frame boundary\n"
       << "  --log <path>               Write events as JSONL\n"
       << "  --hex                      Print one-line hex output for raw byte events\n"
+      << "  --hex-frame                Print one-line hex output for frame events\n"
+      << "  --help                     Show this help\n";
+}
+
+void print_udp_help(std::ostream& out) {
+  out << "Usage:\n"
+      << "  packet-probe udp --bind-host <host> --bind-port <port> [options]\n"
+      << "\n"
+      << "Options:\n"
+      << "  --bind-host <host>         UDP bind host, default: 0.0.0.0\n"
+      << "  --bind-port <port>         UDP bind port\n"
+      << "  --target-host <host>       Optional UDP target host for stdin sends\n"
+      << "  --target-port <port>       Optional UDP target port for stdin sends\n"
+      << "  --decoder <raw|fixed|delimiter|length-prefix>\n"
+      << "  --log <path>               Write events as JSONL\n"
+      << "  --hex                      Print one-line hex output for raw byte events\n"
+      << "  --hex-frame                Print one-line hex output for frame events\n"
       << "  --help                     Show this help\n";
 }
 
@@ -131,10 +173,41 @@ CliOptions parse_args(int argc, char** argv) {
       options.help = true;
     } else if (arg == "--version") {
       options.version = true;
-    } else if (arg == "--hex") {
-      options.hex = true;
+    } else if (arg == "--hex" || arg == "--hex-raw") {
+      options.hex_raw = true;
+    } else if (arg == "--hex-frame") {
+      options.hex_frame = true;
     } else if (arg == "--latency") {
       options.latency = true;
+    } else if (arg == "--decoder") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--decoder requires a value");
+      }
+      options.decoder_config.decoder = argv[i];
+    } else if (arg == "--frame-size") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--frame-size requires a value");
+      }
+      options.decoder_config.frame_size = std::stoul(argv[i]);
+    } else if (arg == "--delimiter") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--delimiter requires a value");
+      }
+      options.decoder_config.delimiter = packet_probe::parse_delimiter_bytes(argv[i]);
+    } else if (arg == "--include-delimiter") {
+      options.decoder_config.include_delimiter = true;
+    } else if (arg == "--length-size") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--length-size requires a value");
+      }
+      options.decoder_config.length_size = std::stoul(argv[i]);
+    } else if (arg == "--length-endian") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--length-endian requires a value");
+      }
+      options.decoder_config.length_endian = argv[i];
+    } else if (arg == "--length-includes-header") {
+      options.decoder_config.length_includes_header = true;
     } else if (arg == "--host") {
       if (++i >= argc) {
         throw std::invalid_argument("--host requires a value");
@@ -184,6 +257,16 @@ CliOptions parse_args(int argc, char** argv) {
         throw std::invalid_argument("--listen-port requires a value");
       }
       options.listen_port = parse_port(argv[i]);
+    } else if (arg == "--bind-host") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--bind-host requires a value");
+      }
+      options.bind_host = argv[i];
+    } else if (arg == "--bind-port") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--bind-port requires a value");
+      }
+      options.bind_port = parse_port(argv[i]);
     } else if (arg == "--target-host") {
       if (++i >= argc) {
         throw std::invalid_argument("--target-host requires a value");
@@ -241,11 +324,23 @@ int run_line_sender_session(Session& session) {
   return 0;
 }
 
-void print_event(packet_probe::PacketEvent const& event, bool hex_enabled) {
-  if (event.type == packet_probe::EventType::RawBytes && hex_enabled) {
+void print_event(packet_probe::PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled) {
+  if (event.type == packet_probe::EventType::RawBytes && hex_raw_enabled) {
     auto direction = event.direction == packet_probe::Direction::AppToDevice ? "APP -> DEVICE" : "DEVICE -> APP";
     std::cout << packet_probe::format_event_line(event.timestamp_ns, direction, event.payload.size(), event.payload)
               << '\n';
+    return;
+  }
+
+  if (event.type == packet_probe::EventType::Frame && hex_frame_enabled) {
+    auto direction = event.direction == packet_probe::Direction::AppToDevice ? "APP -> DEVICE" : "DEVICE -> APP";
+    std::cout << "[frame] parent=" << event.parent_sequence << ' ' << direction << ' ' << event.payload.size()
+              << " bytes";
+    auto const hex = packet_probe::to_hex(event.payload, true);
+    if (!hex.empty()) {
+      std::cout << "  " << hex;
+    }
+    std::cout << '\n';
     return;
   }
 
@@ -258,6 +353,24 @@ void print_event(packet_probe::PacketEvent const& event, bool hex_enabled) {
   if (event.type == packet_probe::EventType::Error || event.type == packet_probe::EventType::StateChange) {
     std::cout << event.summary << '\n';
   }
+}
+
+std::unique_ptr<packet_probe::JsonlRecorder> make_recorder(CliOptions const& options) {
+  auto recorder = std::make_unique<packet_probe::JsonlRecorder>();
+  if (!options.log_path.empty()) {
+    recorder->open(options.log_path);
+  }
+  return recorder;
+}
+
+packet_probe::EventPipeline make_pipeline(CliOptions const& options, packet_probe::JsonlRecorder& recorder) {
+  (void)packet_probe::create_frame_decoder(options.decoder_config);
+  return packet_probe::EventPipeline(
+      packet_probe::make_frame_decoder_factory(options.decoder_config),
+      [&](packet_probe::PacketEvent const& event) {
+        recorder.record(event);
+        print_event(event, options.hex_raw, options.hex_frame);
+      });
 }
 
 int run_tcp_proxy(CliOptions const& options) {
@@ -274,10 +387,8 @@ int run_tcp_proxy(CliOptions const& options) {
     throw std::invalid_argument("tcp-proxy requires --target-port");
   }
 
-  auto recorder = std::make_unique<packet_probe::JsonlRecorder>();
-  if (!options.log_path.empty()) {
-    recorder->open(options.log_path);
-  }
+  auto recorder = make_recorder(options);
+  auto pipeline = make_pipeline(options, *recorder);
 
   packet_probe::TcpProxyConfig config;
   config.listen_host = options.listen_host;
@@ -287,8 +398,7 @@ int run_tcp_proxy(CliOptions const& options) {
   config.latency_enabled = options.latency;
 
   packet_probe::TcpProxyCaptureSession session(config, [&](packet_probe::PacketEvent const& event) {
-    recorder->record(event);
-    print_event(event, options.hex);
+    pipeline.consume(event);
   });
 
   session.start();
@@ -307,10 +417,8 @@ int run_tcp_client(CliOptions const& options) {
     throw std::invalid_argument("tcp-client requires --port");
   }
 
-  auto recorder = std::make_unique<packet_probe::JsonlRecorder>();
-  if (!options.log_path.empty()) {
-    recorder->open(options.log_path);
-  }
+  auto recorder = make_recorder(options);
+  auto pipeline = make_pipeline(options, *recorder);
 
   packet_probe::TcpDirectCaptureOptions capture_options;
   capture_options.host = options.host;
@@ -318,8 +426,7 @@ int run_tcp_client(CliOptions const& options) {
 
   packet_probe::TcpDirectCaptureSession session(
       capture_options, [&](packet_probe::PacketEvent const& event) {
-        recorder->record(event);
-        print_event(event, options.hex);
+        pipeline.consume(event);
       });
 
   session.start();
@@ -334,10 +441,8 @@ int run_serial(CliOptions const& options) {
     throw std::invalid_argument("serial requires --baudrate");
   }
 
-  auto recorder = std::make_unique<packet_probe::JsonlRecorder>();
-  if (!options.log_path.empty()) {
-    recorder->open(options.log_path);
-  }
+  auto recorder = make_recorder(options);
+  auto pipeline = make_pipeline(options, *recorder);
 
   packet_probe::SerialCaptureOptions capture_options;
   capture_options.port = options.serial_port;
@@ -349,8 +454,33 @@ int run_serial(CliOptions const& options) {
 
   packet_probe::SerialDirectCaptureSession session(
       capture_options, [&](packet_probe::PacketEvent const& event) {
-        recorder->record(event);
-        print_event(event, options.hex);
+        pipeline.consume(event);
+      });
+
+  session.start();
+  return run_line_sender_session(session);
+}
+
+int run_udp(CliOptions const& options) {
+  if (options.bind_host.empty()) {
+    throw std::invalid_argument("udp requires --bind-host");
+  }
+  if (options.bind_port == 0) {
+    throw std::invalid_argument("udp requires --bind-port");
+  }
+
+  auto recorder = make_recorder(options);
+  auto pipeline = make_pipeline(options, *recorder);
+
+  packet_probe::UdpDirectCaptureOptions capture_options;
+  capture_options.bind_host = options.bind_host;
+  capture_options.bind_port = options.bind_port;
+  capture_options.target_host = options.target_host;
+  capture_options.target_port = options.target_port;
+
+  packet_probe::UdpDirectCaptureSession session(
+      capture_options, [&](packet_probe::PacketEvent const& event) {
+        pipeline.consume(event);
       });
 
   session.start();
@@ -370,6 +500,8 @@ int main(int argc, char** argv) {
         print_tcp_proxy_help(std::cout);
       } else if (options.mode == "serial") {
         print_serial_help(std::cout);
+      } else if (options.mode == "udp") {
+        print_udp_help(std::cout);
       } else {
         print_help(std::cout);
       }
@@ -387,6 +519,9 @@ int main(int argc, char** argv) {
     }
     if (options.mode == "serial") {
       return run_serial(options);
+    }
+    if (options.mode == "udp") {
+      return run_udp(options);
     }
 
     throw std::invalid_argument("unknown or missing mode: " + options.mode);

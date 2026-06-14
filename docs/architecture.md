@@ -14,8 +14,9 @@ Packet Probe is organized around a transport-independent event model.
 [Viewer]
 ```
 
-The current MVP is CLI-only. It records communication events from a direct TCP client
-session or TCP proxy session and writes them to stdout and optional JSONL logs.
+The current MVP is CLI-only. It records communication events from direct TCP, UDP,
+and Serial sessions or TCP proxy sessions and writes them to stdout and optional
+JSONL logs.
 
 TCP Proxy Mode:
 
@@ -37,6 +38,7 @@ Core responsibilities:
 - record timestamp, direction, transport, size, payload, and summary
 - record source and destination endpoints when proxying
 - provide heuristic latency events for request/response-style traffic
+- derive frame events from raw payloads through a transport-independent decoder pipeline
 - keep capture, recorder, decoder, and future IPC layers separable
 
 Capture responsibilities:
@@ -49,6 +51,17 @@ Recorder responsibilities:
 
 - serialize each event as one JSON object per line
 - preserve a stable log format that a future viewer can load
+
+Decoder pipeline:
+
+```text
+Raw Bytes
+  -> Frame
+    -> Future: Decoded Message
+```
+
+Raw byte events preserve the original transport payload. Frame events are derived
+from raw byte events and use `parent_seq` to refer back to the source event.
 
 Latency tracking:
 
