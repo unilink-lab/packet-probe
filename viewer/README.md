@@ -7,7 +7,14 @@ JSONL events in a table, hex view, and detail panel.
 
 ## Install
 
+The viewer depends on PySide6 and unilink-python.
+
+For local development with sibling repositories:
+
 ```sh
+python -m pip install -e ../unilink-python \
+  -Ccmake.define.UNILINK_CORE_SOURCE_DIR=../unilink
+
 cd viewer
 python -m pip install -e .
 ```

@@ -16,6 +16,12 @@ redistributing the viewer.
 For source distributions from this repository, Packet Probe only includes viewer
 source code and dependency declarations.
 
+## unilink-python / unilink
+
+The viewer uses unilink-python as its IPC transport dependency. unilink-python
+binds the unilink C++ communication library and may include native extension
+modules and runtime libraries in packaged distributions.
+
 ## Packaging note
 
 If you build a standalone viewer binary or installer that bundles PySide6 or Qt

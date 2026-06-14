@@ -9,7 +9,9 @@ authors = [
   { name = "Packet Probe contributors" }
 ]
 dependencies = [
-  "PySide6>=6.6"
+  "PySide6>=6.6",
+  # TODO: enable when unilink-python is available as an installable package
+  # "unilink-python>=0.7.4",
 ]
 
 [project.optional-dependencies]
