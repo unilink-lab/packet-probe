@@ -57,3 +57,6 @@ PY
 - Start Packet Probe, connect the viewer, then stop Packet Probe. The viewer should switch to disconnected state.
 - Click Pause, send datagrams, then click Resume. Buffered events should appear.
 - Click Clear. The table, hex view, and detail view should be cleared.
+- Try connecting to a missing socket path repeatedly. The viewer should show connection errors and remain usable.
+- Connect to a running Packet Probe IPC socket, click Disconnect, then Connect again. The viewer should reconnect without restarting.
+- Close the viewer window while connected. The window should close without hanging.

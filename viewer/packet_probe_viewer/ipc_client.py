@@ -25,6 +25,7 @@ class IpcClientWorker(QThread):
             self.status_changed.emit("connected")
         except Exception as e:
             self.error_occurred.emit(f"Connection failed: {e}")
+            self.cleanup()
             self.status_changed.emit("disconnected")
             self.disconnected.emit()
             return
@@ -72,8 +73,8 @@ class IpcClientWorker(QThread):
             except OSError:
                 pass
 
-        if self.isRunning():
-            self.wait(2000)
+        if self.isRunning() and not self.wait(2000):
+            self.error_occurred.emit("IPC worker did not stop within 2 seconds")
 
         self.cleanup()
 
