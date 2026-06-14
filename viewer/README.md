@@ -79,6 +79,13 @@ File > Open Log...
 
 or the `Open Log` button.
 
+## UI Layout
+
+Packet Probe Viewer follows a compact desktop communication-tool layout.
+
+- Top controls: CLI path, capture arguments, IPC socket, and action buttons
+- Center view: live or offline event table
+- Bottom tabs: Hex, JSON detail, and Process Log
 
 ## Limitations
 

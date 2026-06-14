@@ -2,7 +2,7 @@ import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
-    QPlainTextEdit, QGroupBox
+    QPlainTextEdit, QGroupBox, QTabWidget
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer
 from .ipc_client import IpcClientWorker
@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
         self.pending_events: list[PacketEvent] = []
 
         self.setup_ui()
+        self.set_mode("idle")
 
         # Connect capture process signals
         self.capture_process.started.connect(self.on_capture_started)
@@ -57,11 +58,12 @@ class MainWindow(QMainWindow):
 
         main_layout = QVBoxLayout(central_widget)
 
-        # Capture Group Box
-        capture_group = QGroupBox("Capture", self)
-        capture_layout = QVBoxLayout(capture_group)
+        # Top Control Widget
+        top_control_widget = QWidget(self)
+        top_control_layout = QVBoxLayout(top_control_widget)
+        top_control_layout.setContentsMargins(0, 0, 0, 0)
 
-        # CLI Path
+        # CLI Path Row
         path_layout = QHBoxLayout()
         path_layout.addWidget(QLabel("CLI Path:", self))
         default_cli = os.environ.get("PACKET_PROBE_CLI", "packet-probe")
@@ -70,68 +72,60 @@ class MainWindow(QMainWindow):
         self.browse_cli_btn = QPushButton("Browse", self)
         self.browse_cli_btn.clicked.connect(self.browse_cli_path)
         path_layout.addWidget(self.browse_cli_btn)
-        capture_layout.addLayout(path_layout)
+        top_control_layout.addLayout(path_layout)
 
-        # Args
+        # Args Row
         args_layout = QHBoxLayout()
         args_layout.addWidget(QLabel("Args:", self))
         self.cli_args_edit = QLineEdit("udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl", self)
         args_layout.addWidget(self.cli_args_edit)
-        capture_layout.addLayout(args_layout)
+        top_control_layout.addLayout(args_layout)
 
-        # Start/Stop buttons
-        capture_btn_layout = QHBoxLayout()
+        # Action Buttons Row
+        action_btn_layout = QHBoxLayout()
         self.start_capture_btn = QPushButton("Start Capture", self)
         self.start_capture_btn.clicked.connect(self.start_capture)
-        capture_btn_layout.addWidget(self.start_capture_btn)
+        action_btn_layout.addWidget(self.start_capture_btn)
 
         self.stop_capture_btn = QPushButton("Stop Capture", self)
         self.stop_capture_btn.setEnabled(False)
         self.stop_capture_btn.clicked.connect(self.stop_capture)
-        capture_btn_layout.addWidget(self.stop_capture_btn)
-        capture_layout.addLayout(capture_btn_layout)
-
-        main_layout.addWidget(capture_group)
-
-        # IPC Group Box
-        ipc_group = QGroupBox("IPC", self)
-        ipc_layout = QVBoxLayout(ipc_group)
-
-        ctrl_layout = QHBoxLayout()
-        ctrl_layout.addWidget(QLabel("Socket Path:", self))
-        self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
-        ctrl_layout.addWidget(self.socket_path_edit)
-
-        self.connect_btn = QPushButton("Connect", self)
-        self.connect_btn.clicked.connect(self.toggle_connection)
-        ctrl_layout.addWidget(self.connect_btn)
-
-        self.status_label = QLabel("Status: disconnected", self)
-        ctrl_layout.addWidget(self.status_label)
-
-        self.pause_btn = QPushButton("Pause", self)
-        self.pause_btn.clicked.connect(self.toggle_pause)
-        ctrl_layout.addWidget(self.pause_btn)
-
-        self.clear_btn = QPushButton("Clear", self)
-        self.clear_btn.clicked.connect(self.clear_all)
-        ctrl_layout.addWidget(self.clear_btn)
+        action_btn_layout.addWidget(self.stop_capture_btn)
 
         self.open_log_btn = QPushButton("Open Log", self)
         self.open_log_btn.clicked.connect(self.open_log_file)
-        ctrl_layout.addWidget(self.open_log_btn)
+        action_btn_layout.addWidget(self.open_log_btn)
 
-        ipc_layout.addLayout(ctrl_layout)
-        main_layout.addWidget(ipc_group)
+        self.pause_btn = QPushButton("Pause", self)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        action_btn_layout.addWidget(self.pause_btn)
 
-        # Process Output Group Box
-        process_group = QGroupBox("Process Output", self)
-        process_layout = QVBoxLayout(process_group)
-        self.process_output = QPlainTextEdit(self)
-        self.process_output.setReadOnly(True)
-        self.process_output.setMaximumHeight(100)
-        process_layout.addWidget(self.process_output)
-        main_layout.addWidget(process_group)
+        self.clear_btn = QPushButton("Clear", self)
+        self.clear_btn.clicked.connect(self.clear_all)
+        action_btn_layout.addWidget(self.clear_btn)
+        action_btn_layout.addStretch()
+        top_control_layout.addLayout(action_btn_layout)
+
+        # IPC Status Row
+        ipc_layout = QHBoxLayout()
+        ipc_layout.addWidget(QLabel("Socket Path:", self))
+        self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
+        ipc_layout.addWidget(self.socket_path_edit)
+
+        self.connect_btn = QPushButton("Connect", self)
+        self.connect_btn.clicked.connect(self.toggle_connection)
+        ipc_layout.addWidget(self.connect_btn)
+        top_control_layout.addLayout(ipc_layout)
+
+        status_layout = QHBoxLayout()
+        self.status_label = QLabel("Status: disconnected", self)
+        status_layout.addWidget(self.status_label)
+        self.mode_label = QLabel("Mode: idle", self)
+        status_layout.addWidget(self.mode_label)
+        status_layout.addStretch()
+        top_control_layout.addLayout(status_layout)
+
+        main_layout.addWidget(top_control_widget)
 
         # Menu bar
         menu_bar = self.menuBar()
@@ -143,9 +137,7 @@ class MainWindow(QMainWindow):
         exit_action = file_menu.addAction("E&xit")
         exit_action.triggered.connect(self.close)
 
-        self.message_label = QLabel("", self)
-        main_layout.addWidget(self.message_label)
-
+        # Main Splitter
         main_splitter = QSplitter(Qt.Orientation.Vertical, self)
         main_layout.addWidget(main_splitter)
 
@@ -159,17 +151,24 @@ class MainWindow(QMainWindow):
         self.table_view.selectionModel().selectionChanged.connect(self.on_selection_changed)
         main_splitter.addWidget(self.table_view)
 
-        detail_splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        main_splitter.addWidget(detail_splitter)
+        # Bottom Detail Tabs
+        self.detail_tabs = QTabWidget(self)
 
         self.hex_view = HexView(self)
-        detail_splitter.addWidget(self.hex_view)
-
         self.detail_view = EventDetailView(self)
-        detail_splitter.addWidget(self.detail_view)
+        self.process_output = QPlainTextEdit(self)
+        self.process_output.setReadOnly(True)
 
-        main_splitter.setSizes([400, 250])
-        detail_splitter.setSizes([475, 475])
+        self.detail_tabs.addTab(self.hex_view, "Hex")
+        self.detail_tabs.addTab(self.detail_view, "JSON")
+        self.detail_tabs.addTab(self.process_output, "Process Log")
+
+        main_splitter.addWidget(self.detail_tabs)
+
+        main_splitter.setSizes([600, 220])
+
+        self.message_label = QLabel("", self)
+        main_layout.addWidget(self.message_label)
 
     def toggle_connection(self):
         if self.worker and self.worker.isRunning():
@@ -216,10 +215,21 @@ class MainWindow(QMainWindow):
             self.socket_path_edit.setEnabled(False)
             self.clear_all()
             self.message_label.setText("Live mode started")
+            if self.capture_process.is_running():
+                self.status_label.setText("Status: capture running")
+                self.set_mode("launcher")
+            else:
+                self.status_label.setText("Status: connected")
+                self.set_mode("live")
         elif status == "disconnected":
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Connect")
             self.socket_path_edit.setEnabled(True)
+            if not self.capture_process.is_running():
+                self.set_mode("idle")
+
+    def set_mode(self, mode: str):
+        self.mode_label.setText(f"Mode: {mode}")
 
     def on_error_occurred(self, error_msg: str):
         self.message_label.setText(f"Error: {error_msg}")
@@ -245,6 +255,10 @@ class MainWindow(QMainWindow):
             else:
                 self._launcher_connect_pending = False
                 self.message_label.setText("Error: IPC socket was not ready after launcher retry timeout")
+                self.set_mode("idle")
+        else:
+            if not self.capture_process.is_running():
+                self.set_mode("idle")
 
     def _try_launcher_connect(self):
         if not self._launcher_connect_pending:
@@ -349,6 +363,8 @@ class MainWindow(QMainWindow):
 
         self.process_output.appendPlainText(f"[system] Starting CLI: {cmd.executable} " + " ".join(cmd.args))
         self._set_capture_controls_running(True)
+        self.set_mode("launcher")
+        self.status_label.setText("Status: launching")
 
         try:
             self.capture_process.start(cmd.executable, cmd.args)
@@ -373,6 +389,8 @@ class MainWindow(QMainWindow):
         self.process_output.appendPlainText(f"[system] CLI process stopped. Exit code: {exit_code} ({exit_status})")
         self._restore_capture_controls()
         self.disconnect_socket()
+        self.set_mode("idle")
+        self.status_label.setText("Status: disconnected")
 
     def on_capture_error(self, msg):
         self.process_output.appendPlainText(f"[stderr] Process error: {msg}")
@@ -427,6 +445,7 @@ class MainWindow(QMainWindow):
         events = [PacketEvent(e) for e in result.events]
         self.table_model.set_events(events)
 
+        self.set_mode("offline")
         self.status_label.setText("Status: offline log")
 
         meta_msg = format_metadata_message(result.metadata)

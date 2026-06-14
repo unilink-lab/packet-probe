@@ -56,8 +56,7 @@ python -m pip install -e .
 * The socket path field displays `/tmp/packet-probe.sock` without being overwritten by an auto-generated path.
 * Viewer status changes to connected.
 * Event table shows a `device_to_app` raw_bytes event.
-* Selecting the row shows payload hex.
-* Event detail panel shows raw JSON.
+* Selecting the row updates the Hex tab and JSON tab.
 
 ### Additional checks
 
@@ -100,9 +99,10 @@ python -m pip install -e .
 ### Expected results
 
 * When clicking `Start Capture`, the viewer generates an IPC socket path and updates the Socket Path field.
-* Process output from the CLI process is printed to the process output pane (without empty `[stdout]` or `[stderr]` prefixes).
+* Process output from the CLI process appears in the Process Log tab (without empty `[stdout]` or `[stderr]` prefixes).
 * The viewer automatically attempts to connect to the generated IPC socket and succeeds (using the retry loop).
 * UDP events appear in the table.
+* Selecting an event updates the Hex tab and JSON tab.
 * Clicking `Stop Capture` terminates the process.
 
 ### Additional checks
