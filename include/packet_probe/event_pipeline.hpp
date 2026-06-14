@@ -26,9 +26,13 @@ class EventPipeline {
   FrameDecoder& decoder_for(PacketEvent const& event);
   PacketEvent make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload);
 
+  // Derived events currently use a high range to avoid collisions with
+  // capture-session raw event sequences until a shared allocator is introduced.
+  static constexpr std::uint64_t kDerivedSequenceStart = 1000000000000ULL;
+
   DecoderFactory decoder_factory_;
   EventSink sink_;
-  std::uint64_t next_derived_sequence_ = 1000000000000ULL;
+  std::uint64_t next_derived_sequence_ = kDerivedSequenceStart;
   std::unordered_map<std::string, std::unique_ptr<FrameDecoder>> decoders_;
   std::mutex mutex_;
 };

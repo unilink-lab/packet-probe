@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "packet_probe/hex_dump.hpp"
+#include "packet_probe/version.hpp"
 
 namespace packet_probe {
 
@@ -51,6 +52,16 @@ std::string escape_json(std::string const& value) {
 }
 
 }  // namespace
+
+std::string serialize_metadata_jsonl() {
+  std::string line;
+  line += "{\"type\":\"metadata\",\"schema\":\"packet-probe.log.v1\",";
+  line += "\"event_schema\":\"packet-probe.event.v1\",";
+  line += "\"tool\":\"packet-probe\",\"version\":\"";
+  line += PACKET_PROBE_VERSION;
+  line += "\"}";
+  return line;
+}
 
 std::string serialize_jsonl(PacketEvent const& event) {
   std::string line;
@@ -115,6 +126,8 @@ void JsonlRecorder::open(std::string path) {
   if (!output_) {
     throw std::runtime_error("failed to open JSONL log: " + path);
   }
+  output_ << serialize_metadata_jsonl() << '\n';
+  output_.flush();
 }
 
 void JsonlRecorder::close() {

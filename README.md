@@ -262,6 +262,16 @@ Decoder details are documented in [docs/decoders.md](docs/decoders.md).
 MessageDecoder extension interface is available as a future extension point.
 Packet Probe does not include protocol-specific message decoders yet.
 
+## Documentation
+
+- [Capture Modes](docs/capture-modes.md)
+- [Send Input](docs/send-input.md)
+- [Frame Decoders](docs/decoders.md)
+- [JSONL Format](docs/jsonl-format.md)
+- [IPC Protocol Draft](docs/ipc-protocol.md)
+- [Validation Guides](docs/validation/)
+- [Roadmap](docs/roadmap.md)
+
 ## Roadmap
 
 See [docs/roadmap.md](docs/roadmap.md).

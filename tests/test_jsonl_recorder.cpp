@@ -1,5 +1,7 @@
 #include <cassert>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -21,6 +23,11 @@ packet_probe::PacketEvent base_event() {
 }  // namespace
 
 int main() {
+  auto metadata_line = packet_probe::serialize_metadata_jsonl();
+  assert(metadata_line.find("\"type\":\"metadata\"") != std::string::npos);
+  assert(metadata_line.find("\"schema\":\"packet-probe.log.v1\"") != std::string::npos);
+  assert(metadata_line.find("\"event_schema\":\"packet-probe.event.v1\"") != std::string::npos);
+
   auto event = base_event();
   event.payload = {0x02, 0x10, 0x01, 0x00, 0x03, 0xA7};
   event.summary = "RX 6 bytes";
@@ -104,6 +111,23 @@ int main() {
   assert(frame_line.find("\"seq\":15") != std::string::npos);
   assert(frame_line.find("\"parent_seq\":14") != std::string::npos);
   assert(frame_line.find("\"type\":\"frame\"") != std::string::npos);
+
+  auto const path = std::filesystem::temp_directory_path() / "packet-probe-jsonl-recorder-test.jsonl";
+  std::filesystem::remove(path);
+  {
+    packet_probe::JsonlRecorder recorder(path.string());
+    recorder.record(event);
+  }
+
+  std::ifstream input(path);
+  std::string first_line;
+  std::string second_line;
+  std::getline(input, first_line);
+  std::getline(input, second_line);
+  assert(first_line.find("\"type\":\"metadata\"") != std::string::npos);
+  assert(first_line.find("\"schema\":\"packet-probe.log.v1\"") != std::string::npos);
+  assert(second_line == line);
+  std::filesystem::remove(path);
 
   return 0;
 }

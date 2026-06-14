@@ -3,6 +3,7 @@
 #include <exception>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace packet_probe {
 
@@ -10,7 +11,6 @@ EventPipeline::EventPipeline(DecoderFactory decoder_factory, EventSink sink)
     : decoder_factory_(std::move(decoder_factory)), sink_(std::move(sink)) {}
 
 void EventPipeline::consume(PacketEvent const& event) {
-  std::lock_guard<std::mutex> lock(mutex_);
   if (!sink_) {
     return;
   }
@@ -20,20 +20,29 @@ void EventPipeline::consume(PacketEvent const& event) {
     return;
   }
 
-  auto& decoder = decoder_for(event);
-  try {
-    auto result = decoder.consume(event.payload);
-    for (auto& frame : result.frames) {
-      sink_(make_frame_event(event, std::move(frame)));
+  std::vector<PacketEvent> derived_events;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& decoder = decoder_for(event);
+    try {
+      auto result = decoder.consume(event.payload);
+      derived_events.reserve(result.frames.size());
+      for (auto& frame : result.frames) {
+        derived_events.push_back(make_frame_event(event, std::move(frame)));
+      }
+    } catch (std::exception const& ex) {
+      auto error = event;
+      error.sequence = next_derived_sequence_++;
+      error.parent_sequence = event.sequence;
+      error.type = EventType::Error;
+      error.payload.clear();
+      error.summary = std::string("decoder error: ") + ex.what();
+      derived_events.push_back(std::move(error));
     }
-  } catch (std::exception const& ex) {
-    auto error = event;
-    error.sequence = next_derived_sequence_++;
-    error.parent_sequence = event.sequence;
-    error.type = EventType::Error;
-    error.payload.clear();
-    error.summary = std::string("decoder error: ") + ex.what();
-    sink_(error);
+  }
+
+  for (auto const& derived : derived_events) {
+    sink_(derived);
   }
 }
 

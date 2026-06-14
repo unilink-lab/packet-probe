@@ -9,6 +9,7 @@
 namespace packet_probe {
 
 std::string serialize_jsonl(PacketEvent const& event);
+std::string serialize_metadata_jsonl();
 
 class JsonlRecorder {
  public:
