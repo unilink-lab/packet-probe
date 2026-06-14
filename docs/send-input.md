@@ -1,7 +1,7 @@
 # Send Input
 
 Packet Probe direct modes can send command payloads while they capture traffic.
-MVP-6 adds a common input parser for TCP, Serial, and UDP Direct Mode.
+Packet Probe provides a common input parser for TCP, Serial, and UDP Direct Mode.
 
 ## Formats
 
@@ -51,7 +51,7 @@ GG
 --send-file <path>
 ```
 
-The file is read as binary data and sent once. MVP-6 reads the whole file into
+The file is read as binary data and sent once. The current implementation reads the whole file into
 memory and sends it as a single payload.
 
 ```sh

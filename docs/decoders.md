@@ -8,9 +8,9 @@ Raw Bytes
     -> Decoded Message
 ```
 
-MVP-5 implements the first step after raw capture: frame extraction. A minimal
-`MessageDecoder` extension interface exists, but protocol-specific message decoding
-is intentionally left for later work.
+Packet Probe currently provides frame decoders for raw, fixed-size, delimiter,
+and length-prefix framing. A minimal `MessageDecoder` extension interface exists,
+but protocol-specific message decoding is intentionally left for later work.
 
 ## Event Types
 

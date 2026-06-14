@@ -1,26 +1,34 @@
 # Capture Modes
 
-## 1. Direct Mode
+Packet Probe supports direct capture modes and proxy capture modes.
 
-Packet Probe connects directly to a target device.
+## Direct Modes
 
-Direct Mode is implemented for:
+Direct modes connect Packet Probe directly to one communication endpoint.
 
-- TCP client sessions
-- TCP server sessions
-- Serial sessions
-- UDP datagram sessions
+Implemented direct modes:
 
-## 2. Proxy Mode
+- TCP client
+- TCP server
+- Serial
+- UDP
 
-Packet Probe sits between an existing application and a target device.
+## Proxy Modes
 
-Proxy Mode is implemented for TCP in MVP-2.
-Serial proxy mode is not implemented yet.
-UDP proxy mode is not implemented yet.
+Proxy modes place Packet Probe between an existing application and a target device.
 
-## 3. Hook Mode
+Implemented proxy modes:
 
-An application emits communication events to Packet Probe.
+- TCP proxy
 
-This mode is not implemented in MVP-1.
+Not implemented yet:
+
+- Serial proxy
+- UDP proxy
+
+## Hook Mode
+
+Hook mode is a possible future integration pattern where an application emits
+communication events to Packet Probe without changing the communication path.
+
+Hook mode is not implemented yet.

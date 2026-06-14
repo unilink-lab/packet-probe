@@ -19,7 +19,7 @@ for Unix-like systems.
 
 ## Transport
 
-The MVP transport is Unix Domain Socket with `SOCK_STREAM`.
+The initial transport is Unix Domain Socket with `SOCK_STREAM`.
 
 UDS IPC is currently supported on Unix-like systems. Windows viewer integration
 may use TCP loopback or named pipes in a future version.
@@ -41,7 +41,7 @@ JSONL to disk and broadcast the same events to IPC clients at the same time.
 
 ## Protocol
 
-The MVP protocol is JSONL over a stream socket.
+The current protocol is JSONL over a stream socket.
 
 - Message boundary: newline-delimited JSON
 - Encoding: UTF-8 JSON lines
@@ -68,7 +68,7 @@ Core to viewer messages:
 
 Viewer to core messages:
 
-- none in the MVP IPC protocol
+- none in the current read-only IPC protocol
 
 ## Multi-Client Behavior
 
@@ -81,7 +81,7 @@ Multiple viewer clients can connect to the same socket.
 
 ## Backpressure and Slow Clients
 
-MVP IPC uses synchronous broadcast to connected clients.
+The current IPC implementation uses synchronous broadcast to connected clients.
 
 This keeps the implementation simple, but a slow or blocked viewer client may delay
 event broadcast. Packet Probe removes clients when socket writes fail, but it does
@@ -112,7 +112,7 @@ When Packet Probe stops:
 
 The first viewer integration is read-only. Viewer command send, capture
 start/stop control, filter subscription, snapshot request, and mutation APIs are
-out of scope for the MVP IPC protocol. The CLI or daemon starts capture, and the
+out of scope for the current read-only IPC protocol. The CLI or daemon starts capture, and the
 viewer subscribes to the event stream.
 
 ## Reconnect Policy

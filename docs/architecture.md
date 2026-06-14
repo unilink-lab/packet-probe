@@ -14,7 +14,7 @@ Packet Probe is organized around a transport-independent event model.
 [Viewer]
 ```
 
-The current MVP is CLI-first. It records communication events from direct TCP,
+The current implementation is CLI-first. It records communication events from direct TCP,
 UDP, and Serial sessions or TCP proxy sessions and writes them to stdout,
 optional JSONL logs, and optional UDS IPC event streams.
 

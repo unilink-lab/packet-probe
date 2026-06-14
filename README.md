@@ -36,7 +36,7 @@ written as JSONL for later viewer support.
 - No external decoder plugin system yet
 - No replay support yet
 - TCP server mode accepts one client connection per process run
-- UDS IPC uses synchronous broadcast in the MVP
+- UDS IPC currently uses synchronous broadcast
 
 ## Build
 
@@ -116,7 +116,7 @@ communication session.
 [Target Device / App TCP Client] -> [Packet Probe TCP Server]
 ```
 
-MVP tcp-server mode accepts one client connection per process run.
+TCP server mode currently accepts one client connection per process run.
 
 Send input is attempted only after the CLI reads stdin or `--send-file`.
 For `--send-file`, a remote client must already be connected when the file payload is sent.

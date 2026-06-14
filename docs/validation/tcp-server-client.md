@@ -65,7 +65,7 @@ packet-probe tcp-server \
 
 > [!WARNING]
 > For `--send-file`, you must connect the remote client *before* the file payload is sent.
-> MVP tcp-server mode does not support delayed send-on-connect yet. If a client is not connected when the CLI reads the file, the send fails immediately with an error.
+> TCP server mode currently does not support delayed send-on-connect yet. If a client is not connected when the CLI reads the file, the send fails immediately with an error.
 
 ## Expected Stdout
 
