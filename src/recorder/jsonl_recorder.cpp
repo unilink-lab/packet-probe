@@ -64,6 +64,14 @@ std::string serialize_jsonl(PacketEvent const& event) {
   line += escape_json(event.transport);
   line += "\",\"direction\":\"";
   line += to_string(event.direction);
+  if (!event.source_endpoint.empty()) {
+    line += "\",\"source\":\"";
+    line += escape_json(event.source_endpoint);
+  }
+  if (!event.destination_endpoint.empty()) {
+    line += "\",\"destination\":\"";
+    line += escape_json(event.destination_endpoint);
+  }
   line += "\",\"type\":\"";
   line += to_string(event.type);
   line += "\",\"size\":";
@@ -76,6 +84,20 @@ std::string serialize_jsonl(PacketEvent const& event) {
   if (!event.decoded_json.empty()) {
     line += ",\"decoded\":";
     line += event.decoded_json;
+  }
+  if (event.type == EventType::Latency) {
+    line += ",\"request_seq\":";
+    line += std::to_string(event.request_sequence);
+    line += ",\"response_seq\":";
+    line += std::to_string(event.response_sequence);
+    line += ",\"latency_ns\":";
+    line += std::to_string(event.latency_ns);
+    line += ",\"latency_us\":";
+    line += std::to_string(event.latency_ns / 1000);
+    line += ",\"request_size\":";
+    line += std::to_string(event.request_size);
+    line += ",\"response_size\":";
+    line += std::to_string(event.response_size);
   }
   line += '}';
   return line;

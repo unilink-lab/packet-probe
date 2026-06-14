@@ -10,8 +10,9 @@
 ## MVP-2
 
 - TCP Proxy Mode
-- request/response pairing
-- latency measurement
+- bidirectional forwarding
+- app_to_device / device_to_app event direction
+- heuristic request/response latency tracking
 
 ## MVP-3
 

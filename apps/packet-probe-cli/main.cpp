@@ -19,6 +19,7 @@
 #include "packet_probe/hex_dump.hpp"
 #include "packet_probe/jsonl_recorder.hpp"
 #include "packet_probe/tcp_direct_capture_session.hpp"
+#include "packet_probe/tcp_proxy_capture_session.hpp"
 #include "packet_probe/version.hpp"
 
 namespace {
@@ -31,8 +32,13 @@ struct CliOptions {
   std::string mode;
   std::string host;
   std::uint16_t port = 0;
+  std::string listen_host;
+  std::uint16_t listen_port = 0;
+  std::string target_host;
+  std::uint16_t target_port = 0;
   std::string log_path;
   bool hex = false;
+  bool latency = true;
   bool help = false;
   bool version = false;
 };
@@ -41,17 +47,41 @@ void print_help(std::ostream& out) {
   out << "Usage:\n"
       << "  packet-probe [--help] [--version]\n"
       << "  packet-probe tcp-client --host <host> --port <port> [--log <path>] [--hex]\n"
+      << "  packet-probe tcp-proxy --listen-host <host> --listen-port <port> "
+         "--target-host <host> --target-port <port> [--log <path>] [--hex] [--latency]\n"
       << "\n"
       << "Modes:\n"
       << "  tcp-client    Connect directly to a TCP target device\n"
+      << "  tcp-proxy     Listen locally and proxy one TCP client to a target device\n"
       << "\n"
       << "Options:\n"
       << "  --host <host>     Target host for tcp-client mode\n"
       << "  --port <port>     Target TCP port for tcp-client mode\n"
+      << "  --listen-host <host>  Local listen host for tcp-proxy mode\n"
+      << "  --listen-port <port>  Local listen port for tcp-proxy mode\n"
+      << "  --target-host <host>  Target host for tcp-proxy mode\n"
+      << "  --target-port <port>  Target port for tcp-proxy mode\n"
       << "  --log <path>      Write events as JSONL\n"
       << "  --hex             Print one-line hex output for raw byte events\n"
+      << "  --latency         Enable heuristic request/response latency events\n"
       << "  --help            Show this help\n"
       << "  --version         Show version\n";
+}
+
+void print_tcp_proxy_help(std::ostream& out) {
+  out << "Usage:\n"
+      << "  packet-probe tcp-proxy --listen-host <host> --listen-port <port> "
+         "--target-host <host> --target-port <port> [--log <path>] [--hex] [--latency]\n"
+      << "\n"
+      << "Options:\n"
+      << "  --listen-host <host>  Local listen host\n"
+      << "  --listen-port <port>  Local listen port\n"
+      << "  --target-host <host>  Target device host\n"
+      << "  --target-port <port>  Target device TCP port\n"
+      << "  --log <path>          Write events as JSONL\n"
+      << "  --hex                 Print one-line hex output for raw byte events\n"
+      << "  --latency             Enable heuristic request/response latency events\n"
+      << "  --help                Show this help\n";
 }
 
 std::uint16_t parse_port(std::string const& value) {
@@ -73,6 +103,8 @@ CliOptions parse_args(int argc, char** argv) {
       options.version = true;
     } else if (arg == "--hex") {
       options.hex = true;
+    } else if (arg == "--latency") {
+      options.latency = true;
     } else if (arg == "--host") {
       if (++i >= argc) {
         throw std::invalid_argument("--host requires a value");
@@ -83,6 +115,26 @@ CliOptions parse_args(int argc, char** argv) {
         throw std::invalid_argument("--port requires a value");
       }
       options.port = parse_port(argv[i]);
+    } else if (arg == "--listen-host") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--listen-host requires a value");
+      }
+      options.listen_host = argv[i];
+    } else if (arg == "--listen-port") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--listen-port requires a value");
+      }
+      options.listen_port = parse_port(argv[i]);
+    } else if (arg == "--target-host") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--target-host requires a value");
+      }
+      options.target_host = argv[i];
+    } else if (arg == "--target-port") {
+      if (++i >= argc) {
+        throw std::invalid_argument("--target-port requires a value");
+      }
+      options.target_port = parse_port(argv[i]);
     } else if (arg == "--log") {
       if (++i >= argc) {
         throw std::invalid_argument("--log requires a value");
@@ -113,15 +165,60 @@ bool stdin_is_terminal() {
 
 void print_event(packet_probe::PacketEvent const& event, bool hex_enabled) {
   if (event.type == packet_probe::EventType::RawBytes && hex_enabled) {
-    auto direction = event.direction == packet_probe::Direction::Rx ? "RX" : "TX";
+    auto direction = event.direction == packet_probe::Direction::AppToDevice ? "APP -> DEVICE" : "DEVICE -> APP";
     std::cout << packet_probe::format_event_line(event.timestamp_ns, direction, event.payload.size(), event.payload)
               << '\n';
+    return;
+  }
+
+  if (event.type == packet_probe::EventType::Latency) {
+    std::cout << "[latency] request=" << event.request_sequence << " response=" << event.response_sequence << ' '
+              << event.latency_ns / 1000 << " us\n";
     return;
   }
 
   if (event.type == packet_probe::EventType::Error || event.type == packet_probe::EventType::StateChange) {
     std::cout << event.summary << '\n';
   }
+}
+
+int run_tcp_proxy(CliOptions const& options) {
+  if (options.listen_host.empty()) {
+    throw std::invalid_argument("tcp-proxy requires --listen-host");
+  }
+  if (options.listen_port == 0) {
+    throw std::invalid_argument("tcp-proxy requires --listen-port");
+  }
+  if (options.target_host.empty()) {
+    throw std::invalid_argument("tcp-proxy requires --target-host");
+  }
+  if (options.target_port == 0) {
+    throw std::invalid_argument("tcp-proxy requires --target-port");
+  }
+
+  auto recorder = std::make_unique<packet_probe::JsonlRecorder>();
+  if (!options.log_path.empty()) {
+    recorder->open(options.log_path);
+  }
+
+  packet_probe::TcpProxyConfig config;
+  config.listen_host = options.listen_host;
+  config.listen_port = options.listen_port;
+  config.target_host = options.target_host;
+  config.target_port = options.target_port;
+  config.latency_enabled = options.latency;
+
+  packet_probe::TcpProxyCaptureSession session(config, [&](packet_probe::PacketEvent const& event) {
+    recorder->record(event);
+    print_event(event, options.hex);
+  });
+
+  session.start();
+  while (!g_stop_requested && !session.stopped()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  session.stop();
+  return 0;
 }
 
 int run_tcp_client(CliOptions const& options) {
@@ -175,7 +272,11 @@ int main(int argc, char** argv) {
   try {
     auto const options = parse_args(argc, argv);
     if (options.help || argc == 1) {
-      print_help(std::cout);
+      if (options.mode == "tcp-proxy") {
+        print_tcp_proxy_help(std::cout);
+      } else {
+        print_help(std::cout);
+      }
       return 0;
     }
     if (options.version) {
@@ -184,6 +285,9 @@ int main(int argc, char** argv) {
     }
     if (options.mode == "tcp-client") {
       return run_tcp_client(options);
+    }
+    if (options.mode == "tcp-proxy") {
+      return run_tcp_proxy(options);
     }
 
     throw std::invalid_argument("unknown or missing mode: " + options.mode);

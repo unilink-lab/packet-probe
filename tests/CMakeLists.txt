@@ -5,3 +5,11 @@ add_test(NAME test_hex_dump COMMAND test_hex_dump)
 add_executable(test_jsonl_recorder test_jsonl_recorder.cpp)
 target_link_libraries(test_jsonl_recorder PRIVATE packet_probe::core)
 add_test(NAME test_jsonl_recorder COMMAND test_jsonl_recorder)
+
+add_executable(test_latency_tracker test_latency_tracker.cpp)
+target_link_libraries(test_latency_tracker PRIVATE packet_probe::core)
+add_test(NAME test_latency_tracker COMMAND test_latency_tracker)
+
+add_executable(test_packet_event_direction test_packet_event_direction.cpp)
+target_link_libraries(test_packet_event_direction PRIVATE packet_probe::core)
+add_test(NAME test_packet_event_direction COMMAND test_packet_event_direction)

@@ -6,6 +6,10 @@ namespace packet_probe {
 
 const char* to_string(Direction direction) {
   switch (direction) {
+    case Direction::AppToDevice:
+      return "app_to_device";
+    case Direction::DeviceToApp:
+      return "device_to_app";
     case Direction::Rx:
       return "rx";
     case Direction::Tx:
@@ -28,6 +32,8 @@ const char* to_string(EventType type) {
       return "state_change";
     case EventType::Statistic:
       return "statistic";
+    case EventType::Latency:
+      return "latency";
   }
   return "raw_bytes";
 }

@@ -18,6 +18,8 @@ add_library(
   packet_probe_core
   src/core/packet_event.cpp
   src/core/hex_dump.cpp
+  src/core/endpoint.cpp
+  src/core/latency_tracker.cpp
   src/recorder/jsonl_recorder.cpp
 )
 add_library(packet_probe::core ALIAS packet_probe_core)
@@ -40,7 +42,7 @@ if(PACKET_PROBE_USE_UNILINK)
     find_package(unilink CONFIG REQUIRED)
   endif()
 
-  add_library(packet_probe_capture src/capture/tcp_direct_capture_session.cpp)
+  add_library(packet_probe_capture src/capture/tcp_direct_capture_session.cpp src/capture/tcp_proxy_capture_session.cpp)
   add_library(packet_probe::capture ALIAS packet_probe_capture)
   target_compile_features(packet_probe_capture PUBLIC cxx_std_17)
   target_include_directories(

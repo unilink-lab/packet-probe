@@ -52,5 +52,32 @@ int main() {
   assert(error_line.find("\"type\":\"error\"") != std::string::npos);
   assert(error_line.find("\"summary\":\"line\\nbreak\"") != std::string::npos);
 
+  auto proxied = base_event();
+  proxied.direction = packet_probe::Direction::AppToDevice;
+  proxied.source_endpoint = "127.0.0.1:53124";
+  proxied.destination_endpoint = "192.168.0.10:9000";
+  proxied.payload = {0xAA};
+  proxied.summary = "APP -> DEVICE 1 bytes";
+  auto proxied_line = packet_probe::serialize_jsonl(proxied);
+  assert(proxied_line.find("\"direction\":\"app_to_device\"") != std::string::npos);
+  assert(proxied_line.find("\"source\":\"127.0.0.1:53124\"") != std::string::npos);
+  assert(proxied_line.find("\"destination\":\"192.168.0.10:9000\"") != std::string::npos);
+
+  auto latency = base_event();
+  latency.type = packet_probe::EventType::Latency;
+  latency.direction = packet_probe::Direction::DeviceToApp;
+  latency.summary = "response latency 940 us";
+  latency.request_sequence = 12;
+  latency.response_sequence = 13;
+  latency.latency_ns = 940000;
+  latency.request_size = 8;
+  latency.response_size = 7;
+  auto latency_line = packet_probe::serialize_jsonl(latency);
+  assert(latency_line.find("\"type\":\"latency\"") != std::string::npos);
+  assert(latency_line.find("\"request_seq\":12") != std::string::npos);
+  assert(latency_line.find("\"response_seq\":13") != std::string::npos);
+  assert(latency_line.find("\"latency_ns\":940000") != std::string::npos);
+  assert(latency_line.find("\"latency_us\":940") != std::string::npos);
+
   return 0;
 }

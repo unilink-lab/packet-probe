@@ -30,7 +30,7 @@ void TcpDirectCaptureSession::start() {
   stopped_.store(false);
   impl_->client->on_data([this](unilink::MessageContext const& ctx) {
     auto payload = ctx.data_as_vector();
-    emit(make_event(Direction::Rx, EventType::RawBytes, std::move(payload),
+    emit(make_event(Direction::DeviceToApp, EventType::RawBytes, std::move(payload),
                     "RX " + std::to_string(ctx.data().size()) + " bytes"));
   });
   impl_->client->on_connect([this](unilink::ConnectionContext const& ctx) {
@@ -38,18 +38,18 @@ void TcpDirectCaptureSession::start() {
     if (!ctx.client_info().empty()) {
       summary += " " + ctx.client_info();
     }
-    emit(make_event(Direction::Rx, EventType::StateChange, {}, std::move(summary)));
+    emit(make_event(Direction::DeviceToApp, EventType::StateChange, {}, std::move(summary)));
   });
   impl_->client->on_disconnect([this](unilink::ConnectionContext const& ctx) {
     auto summary = std::string("disconnected");
     if (!ctx.client_info().empty()) {
       summary += " " + ctx.client_info();
     }
-    emit(make_event(Direction::Rx, EventType::StateChange, {}, std::move(summary)));
+    emit(make_event(Direction::DeviceToApp, EventType::StateChange, {}, std::move(summary)));
     stopped_.store(true);
   });
   impl_->client->on_error([this](unilink::ErrorContext const& ctx) {
-    emit(make_event(Direction::Rx, EventType::Error, {}, std::string(ctx.message())));
+    emit(make_event(Direction::DeviceToApp, EventType::Error, {}, std::string(ctx.message())));
     stopped_.store(true);
   });
 
@@ -79,7 +79,7 @@ bool TcpDirectCaptureSession::send(std::vector<std::uint8_t> payload) {
   auto sent_payload = payload;
   auto accepted = impl_->client->send_move(std::move(payload));
   if (accepted) {
-    emit(make_event(Direction::Tx, EventType::RawBytes, std::move(sent_payload),
+    emit(make_event(Direction::AppToDevice, EventType::RawBytes, std::move(sent_payload),
                     "TX " + std::to_string(size) + " bytes"));
   }
   return accepted;
