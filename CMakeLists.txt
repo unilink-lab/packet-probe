@@ -13,6 +13,7 @@ set(PACKET_PROBE_UNILINK_SOURCE_DIR
     "${CMAKE_CURRENT_LIST_DIR}/../unilink"
     CACHE PATH "Path to a local unilink source tree"
 )
+set(PACKET_PROBE_INTERNAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 add_library(
   packet_probe_core
@@ -40,6 +41,7 @@ target_include_directories(
   packet_probe_core
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
+  PRIVATE ${PACKET_PROBE_INTERNAL_INCLUDE_DIR}
 )
 
 if(PACKET_PROBE_USE_UNILINK)
@@ -66,6 +68,7 @@ if(PACKET_PROBE_USE_UNILINK)
     packet_probe_capture
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
            $<INSTALL_INTERFACE:include>
+    PRIVATE ${PACKET_PROBE_INTERNAL_INCLUDE_DIR}
   )
   target_link_libraries(packet_probe_capture PUBLIC packet_probe::core unilink::unilink)
 

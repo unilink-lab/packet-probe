@@ -1,4 +1,4 @@
-#include "packet_probe/serial_options.hpp"
+#include "capture/serial_options.hpp"
 
 #include <algorithm>
 #include <cctype>

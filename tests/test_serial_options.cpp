@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "packet_probe/serial_options.hpp"
+#include "capture/serial_options.hpp"
 
 namespace {
 

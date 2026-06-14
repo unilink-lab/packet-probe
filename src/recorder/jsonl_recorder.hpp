@@ -4,8 +4,8 @@
 #include <mutex>
 #include <string>
 
-#include "packet_probe/jsonl_serializer.hpp"
-#include "packet_probe/packet_event.hpp"
+#include "packet_probe/core/jsonl_serializer.hpp"
+#include "packet_probe/core/packet_event.hpp"
 
 namespace packet_probe {
 

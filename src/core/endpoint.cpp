@@ -1,4 +1,4 @@
-#include "packet_probe/endpoint.hpp"
+#include "core/endpoint.hpp"
 
 namespace packet_probe {
 

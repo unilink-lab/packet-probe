@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "packet_probe/hex_dump.hpp"
+#include "core/hex_dump.hpp"
 
 int main() {
   std::vector<std::uint8_t> payload{0x02, 0x10, 0x01, 0x00, 0x03, 0xA7};

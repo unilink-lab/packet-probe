@@ -5,7 +5,7 @@
 #include <deque>
 #include <optional>
 
-#include "packet_probe/packet_event.hpp"
+#include "packet_probe/core/packet_event.hpp"
 
 namespace packet_probe {
 

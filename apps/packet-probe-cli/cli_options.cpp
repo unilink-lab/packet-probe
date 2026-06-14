@@ -163,7 +163,12 @@ void validate_options(CliOptions const& options) {
     if (options.bind_port == 0) {
       throw std::invalid_argument("udp requires --bind-port");
     }
-    if (options.send_option_count > 0 && options.target_host.empty()) {
+    auto const has_target_host = !options.target_host.empty();
+    auto const has_target_port = options.target_port != 0;
+    if (has_target_host != has_target_port) {
+      throw std::invalid_argument("udp target requires both --target-host and --target-port");
+    }
+    if (options.send_option_count > 0 && (!has_target_host || !has_target_port)) {
       throw std::invalid_argument("udp send input requires --target-host and --target-port");
     }
     return;

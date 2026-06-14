@@ -60,5 +60,27 @@ int main() {
     packet_probe::cli::validate_options(options);
   }));
 
+  assert(throws_invalid_argument([] {
+    auto options =
+        parse({"packet-probe", "udp", "--bind-host", "127.0.0.1", "--bind-port", "9000", "--target-host", "127.0.0.1"});
+    packet_probe::cli::validate_options(options);
+  }));
+
+  assert(throws_invalid_argument([] {
+    auto options = parse({"packet-probe", "udp", "--bind-host", "127.0.0.1", "--bind-port", "9000",
+                          "--target-port", "9100"});
+    packet_probe::cli::validate_options(options);
+  }));
+
+  assert(throws_invalid_argument([] {
+    auto options = parse({"packet-probe", "udp", "--bind-host", "127.0.0.1", "--bind-port", "9000", "--send-file",
+                          "command.bin"});
+    packet_probe::cli::validate_options(options);
+  }));
+
+  auto udp_target = parse({"packet-probe", "udp", "--bind-host", "127.0.0.1", "--bind-port", "9000",
+                           "--target-host", "127.0.0.1", "--target-port", "9100"});
+  packet_probe::cli::validate_options(udp_target);
+
   return 0;
 }

@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <string>
 
-#include "packet_probe/decoder_config.hpp"
-#include "packet_probe/send_input.hpp"
-#include "packet_probe/serial_options.hpp"
+#include "packet_probe/decoder/decoder_config.hpp"
+#include "core/send_input.hpp"
+#include "capture/serial_options.hpp"
 
 namespace packet_probe::cli {
 

@@ -1,4 +1,4 @@
-#include "packet_probe/ipc_protocol.hpp"
+#include "packet_probe/ipc/ipc_protocol.hpp"
 
 namespace packet_probe {
 

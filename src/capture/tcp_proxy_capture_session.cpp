@@ -1,4 +1,4 @@
-#include "packet_probe/tcp_proxy_capture_session.hpp"
+#include "capture/tcp_proxy_capture_session.hpp"
 
 #include <array>
 #include <boost/asio.hpp>
@@ -8,8 +8,8 @@
 #include <thread>
 #include <utility>
 
-#include "packet_probe/endpoint.hpp"
-#include "packet_probe/latency_tracker.hpp"
+#include "core/endpoint.hpp"
+#include "core/latency_tracker.hpp"
 
 namespace packet_probe {
 

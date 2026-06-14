@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "packet_probe/send_input.hpp"
+#include "core/send_input.hpp"
 
 namespace packet_probe {
 

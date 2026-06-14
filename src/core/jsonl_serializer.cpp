@@ -1,7 +1,7 @@
-#include "packet_probe/jsonl_serializer.hpp"
+#include "packet_probe/core/jsonl_serializer.hpp"
 
-#include "packet_probe/hex_dump.hpp"
-#include "packet_probe/ipc_protocol.hpp"
+#include "core/hex_dump.hpp"
+#include "packet_probe/ipc/ipc_protocol.hpp"
 #include "packet_probe/version.hpp"
 
 namespace packet_probe {

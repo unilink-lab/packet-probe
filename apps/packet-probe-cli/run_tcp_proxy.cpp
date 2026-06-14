@@ -3,7 +3,7 @@
 #include <chrono>
 #include <thread>
 
-#include "packet_probe/tcp_proxy_capture_session.hpp"
+#include "capture/tcp_proxy_capture_session.hpp"
 
 namespace packet_probe::cli {
 

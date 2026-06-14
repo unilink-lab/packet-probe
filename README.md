@@ -277,11 +277,28 @@ Decoder details are documented in [docs/decoders.md](docs/decoders.md).
 MessageDecoder extension interface is available as a future extension point.
 Packet Probe does not include protocol-specific message decoders yet.
 
+## Public API
+
+Packet Probe is primarily a CLI tool. Its public C++ API is intentionally small.
+
+Public headers are limited to:
+
+- `packet_probe/packet_probe.hpp`
+- `packet_probe/version.hpp`
+- `packet_probe/core/packet_event.hpp`
+- `packet_probe/core/jsonl_serializer.hpp`
+- `packet_probe/decoder/*`
+- `packet_probe/ipc/ipc_protocol.hpp`
+
+Capture sessions, recorders, IPC server implementation, send input parsing, and
+CLI helpers are internal implementation details.
+
 ## Documentation
 
 - [Capture Modes](docs/capture-modes.md)
 - [Send Input](docs/send-input.md)
 - [Frame Decoders](docs/decoders.md)
+- [Header Structure](docs/header-structure.md)
 - [JSONL Format](docs/jsonl-format.md)
 - [IPC Protocol](docs/ipc-protocol.md)
 - [IPC Event Stream Validation](docs/validation/ipc-event-stream.md)

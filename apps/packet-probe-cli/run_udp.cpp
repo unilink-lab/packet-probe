@@ -1,6 +1,6 @@
 #include "run_modes.hpp"
 
-#include "packet_probe/udp_direct_capture_session.hpp"
+#include "capture/udp_direct_capture_session.hpp"
 
 namespace packet_probe::cli {
 

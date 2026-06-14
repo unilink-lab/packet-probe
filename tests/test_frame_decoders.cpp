@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "packet_probe/frame_decoder_factory.hpp"
+#include "decoder/frame_decoder_factory.hpp"
 
 namespace {
 

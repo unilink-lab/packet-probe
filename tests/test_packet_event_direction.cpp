@@ -1,7 +1,7 @@
 #include <cassert>
 #include <string>
 
-#include "packet_probe/packet_event.hpp"
+#include "packet_probe/core/packet_event.hpp"
 
 int main() {
   assert(std::string(packet_probe::to_string(packet_probe::Direction::AppToDevice)) == "app_to_device");

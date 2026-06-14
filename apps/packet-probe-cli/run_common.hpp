@@ -18,12 +18,12 @@
 #endif
 
 #include "cli_options.hpp"
-#include "packet_probe/event_pipeline.hpp"
-#include "packet_probe/frame_decoder_factory.hpp"
-#include "packet_probe/hex_dump.hpp"
-#include "packet_probe/ipc_event_server.hpp"
-#include "packet_probe/jsonl_recorder.hpp"
-#include "packet_probe/send_input_parser.hpp"
+#include "core/event_pipeline.hpp"
+#include "decoder/frame_decoder_factory.hpp"
+#include "core/hex_dump.hpp"
+#include "ipc/ipc_event_server.hpp"
+#include "recorder/jsonl_recorder.hpp"
+#include "core/send_input_parser.hpp"
 
 namespace packet_probe::cli {
 

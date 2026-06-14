@@ -1,4 +1,4 @@
-#include "packet_probe/serial_direct_capture_session.hpp"
+#include "capture/serial_direct_capture_session.hpp"
 
 #include <filesystem>
 #include <stdexcept>

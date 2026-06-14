@@ -2,8 +2,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "packet_probe/event_pipeline.hpp"
-#include "packet_probe/frame_decoder_factory.hpp"
+#include "core/event_pipeline.hpp"
+#include "decoder/frame_decoder_factory.hpp"
 
 int main() {
   packet_probe::PacketEvent raw;

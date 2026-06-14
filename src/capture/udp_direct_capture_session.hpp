@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "packet_probe/capture_session.hpp"
-#include "packet_probe/packet_event.hpp"
+#include "capture/capture_session.hpp"
+#include "packet_probe/core/packet_event.hpp"
 
 namespace packet_probe {
 

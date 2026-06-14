@@ -1,4 +1,4 @@
-#include "packet_probe/udp_direct_capture_session.hpp"
+#include "capture/udp_direct_capture_session.hpp"
 
 #include <stdexcept>
 #include <utility>

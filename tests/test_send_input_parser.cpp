@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "packet_probe/send_input_parser.hpp"
+#include "core/send_input_parser.hpp"
 
 namespace {
 

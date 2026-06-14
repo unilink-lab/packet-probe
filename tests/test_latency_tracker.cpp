@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "packet_probe/latency_tracker.hpp"
+#include "core/latency_tracker.hpp"
 
 namespace {
 

@@ -1,6 +1,6 @@
 #include "run_modes.hpp"
 
-#include "packet_probe/serial_direct_capture_session.hpp"
+#include "capture/serial_direct_capture_session.hpp"
 
 namespace packet_probe::cli {
 

@@ -3,8 +3,8 @@
 #include <functional>
 #include <memory>
 
-#include "packet_probe/decoder_config.hpp"
-#include "packet_probe/frame_decoder.hpp"
+#include "packet_probe/decoder/decoder_config.hpp"
+#include "packet_probe/decoder/frame_decoder.hpp"
 
 namespace packet_probe {
 

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "packet_probe/jsonl_serializer.hpp"
+#include "packet_probe/core/jsonl_serializer.hpp"
 
 namespace {
 

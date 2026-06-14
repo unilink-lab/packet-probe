@@ -1,6 +1,6 @@
-#include "packet_probe/ipc_event_server.hpp"
+#include "ipc/ipc_event_server.hpp"
 
-#include "packet_probe/jsonl_serializer.hpp"
+#include "packet_probe/core/jsonl_serializer.hpp"
 
 #include <atomic>
 #include <cerrno>

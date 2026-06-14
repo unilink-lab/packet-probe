@@ -4,7 +4,7 @@
 #include <span>
 #include <string>
 
-#include "packet_probe/frame_decode_result.hpp"
+#include "packet_probe/decoder/frame_decode_result.hpp"
 
 namespace packet_probe {
 

@@ -7,8 +7,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "packet_probe/frame_decoder.hpp"
-#include "packet_probe/packet_event.hpp"
+#include "packet_probe/decoder/frame_decoder.hpp"
+#include "packet_probe/core/packet_event.hpp"
 
 namespace packet_probe {
 

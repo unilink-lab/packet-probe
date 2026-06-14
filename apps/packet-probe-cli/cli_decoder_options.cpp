@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "packet_probe/frame_decoder_factory.hpp"
+#include "decoder/frame_decoder_factory.hpp"
 
 namespace packet_probe::cli {
 
