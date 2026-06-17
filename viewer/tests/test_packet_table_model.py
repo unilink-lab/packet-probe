@@ -5,11 +5,12 @@ from packet_probe_viewer.event_model import PacketEvent
 def test_table_model_basic():
     model = PacketTableModel()
     assert model.rowCount() == 0
-    assert model.columnCount() == 7
+    assert model.columnCount() == 8
 
     # Append an event
     event = PacketEvent({
         "seq": 1,
+        "parent_seqs": [42],
         "time_ns": 1000000000,
         "direction": "device_to_app",
         "type": "raw_bytes",
@@ -23,11 +24,14 @@ def test_table_model_basic():
 
     # Check header
     assert model.headerData(0, Qt.Orientation.Horizontal) == "Seq"
+    assert model.headerData(1, Qt.Orientation.Horizontal) == "Parent Seq(s)"
 
     # Check data retrieval
     idx = model.index(0, 0)
-    assert model.data(idx) == 1
-    idx_summary = model.index(0, 6)
+    assert model.data(idx) == "42.1"
+    idx_parent = model.index(0, 1)
+    assert model.data(idx_parent) == "42"
+    idx_summary = model.index(0, 7)
     assert model.data(idx_summary) == "hello"
 
 def test_table_model_set_events():

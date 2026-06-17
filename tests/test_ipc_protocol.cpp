@@ -22,6 +22,7 @@ int main() {
   packet_probe::PacketEvent event;
   event.sequence = 42;
   event.parent_sequence = 41;
+  event.parent_sequences = {40, 41};
   event.timestamp_ns = 1781234567890;
   event.session_id = "udp-1";
   event.transport = "udp";
@@ -35,6 +36,7 @@ int main() {
   auto const line = packet_probe::serialize_event_jsonl(event);
   assert(line.find("\"seq\":42") != std::string::npos);
   assert(line.find("\"parent_seq\":41") != std::string::npos);
+  assert(line.find("\"parent_seqs\":[40,41]") != std::string::npos);
   assert(line.find("\"transport\":\"udp\"") != std::string::npos);
   assert(line.find("\"direction\":\"device_to_app\"") != std::string::npos);
   assert(line.find("\"source\":\"127.0.0.1:9100\"") != std::string::npos);

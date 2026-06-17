@@ -32,12 +32,16 @@ int main() {
   assert(events[0].parent_sequence == 0);
   assert(events[1].type == packet_probe::EventType::Frame);
   assert(events[1].parent_sequence == 7);
+  assert(events[1].parent_sequences.size() == 1);
+  assert(events[1].parent_sequences[0] == 7);
   assert(events[1].sequence != 7);
   assert(events[1].direction == raw.direction);
   assert(events[1].source_endpoint == raw.source_endpoint);
   assert(events[1].destination_endpoint == raw.destination_endpoint);
   assert((events[1].payload == std::vector<std::uint8_t>{0x01, 0x02}));
   assert(events[2].parent_sequence == 7);
+  assert(events[2].parent_sequences.size() == 1);
+  assert(events[2].parent_sequences[0] == 7);
   assert((events[2].payload == std::vector<std::uint8_t>{0x03, 0x04}));
 
   events.clear();
@@ -68,7 +72,33 @@ int main() {
   assert(error_events[0].sequence == 9);
   assert(error_events[1].type == packet_probe::EventType::Error);
   assert(error_events[1].parent_sequence == 9);
+  assert(error_events[1].parent_sequences.size() == 1);
+  assert(error_events[1].parent_sequences[0] == 9);
   assert(error_events[1].summary.find("decoder error:") == 0);
+
+  // Test fragmented packets (Option A)
+  events.clear();
+  auto frag1 = raw;
+  frag1.sequence = 10;
+  frag1.payload = {0xAA};
+  pipeline.consume(frag1);
+  // No frame should be emitted yet (only raw bytes event 10)
+  assert(events.size() == 1);
+  assert(events[0].sequence == 10);
+
+  auto frag2 = raw;
+  frag2.sequence = 11;
+  frag2.payload = {0xBB};
+  pipeline.consume(frag2);
+  // Now, raw bytes event 11 and frame event should be emitted
+  assert(events.size() == 3);
+  assert(events[1].sequence == 11);
+  assert(events[2].type == packet_probe::EventType::Frame);
+  assert(events[2].parent_sequence == 11);
+  assert(events[2].parent_sequences.size() == 2);
+  assert(events[2].parent_sequences[0] == 10);
+  assert(events[2].parent_sequences[1] == 11);
+  assert((events[2].payload == std::vector<std::uint8_t>{0xAA, 0xBB}));
 
   return 0;
 }

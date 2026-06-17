@@ -335,6 +335,16 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "CLI Path is empty.")
             return
 
+        import shutil
+        resolved_path = shutil.which(executable)
+        if not resolved_path:
+            QMessageBox.warning(
+                self,
+                "Warning",
+                f"CLI executable not found or not executable:\n{executable}"
+            )
+            return
+
         args_text = self.cli_args_edit.text().strip()
 
         from .ipc_path import make_default_ipc_path
@@ -397,6 +407,9 @@ class MainWindow(QMainWindow):
         if not self.capture_process.is_running():
             self._launcher_connect_pending = False
             self._restore_capture_controls()
+            self.disconnect_socket()
+            self.set_mode("idle")
+            self.status_label.setText("Status: disconnected")
 
     def on_capture_stdout(self, data):
         text = data.rstrip()

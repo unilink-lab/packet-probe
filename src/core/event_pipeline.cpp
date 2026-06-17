@@ -23,21 +23,34 @@ void EventPipeline::consume(PacketEvent const& event) {
   std::vector<PacketEvent> derived_events;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    auto const key = stream_key(event);
     auto& decoder = decoder_for(event);
+
+    // Track raw sequences contributing to the current decoding transaction (Option A)
+    auto& seqs = stream_raw_sequences_[key];
+    seqs.push_back(event.sequence);
+
     try {
       auto result = decoder.consume(event.payload);
       derived_events.reserve(result.frames.size());
       for (auto& frame : result.frames) {
-        derived_events.push_back(make_frame_event(event, std::move(frame)));
+        derived_events.push_back(make_frame_event(event, std::move(frame), seqs));
+      }
+      // If the decoder's buffer is empty, all accumulated raw packet sequences
+      // have been fully reassembled into frames. Clear the history for the next frame.
+      if (result.remaining_buffer.empty()) {
+        seqs.clear();
       }
     } catch (std::exception const& ex) {
       auto error = event;
       error.sequence = next_derived_sequence_++;
       error.parent_sequence = event.sequence;
+      error.parent_sequences = seqs;
       error.type = EventType::Error;
       error.payload.clear();
       error.summary = std::string("decoder error: ") + ex.what();
       derived_events.push_back(std::move(error));
+      seqs.clear();
     }
   }
 
@@ -60,10 +73,11 @@ FrameDecoder& EventPipeline::decoder_for(PacketEvent const& event) {
   return *found->second;
 }
 
-PacketEvent EventPipeline::make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload) {
+PacketEvent EventPipeline::make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload, std::vector<std::uint64_t> const& parent_seqs) {
   PacketEvent frame = parent;
   frame.sequence = next_derived_sequence_++;
   frame.parent_sequence = parent.sequence;
+  frame.parent_sequences = parent_seqs;
   frame.type = EventType::Frame;
   frame.payload = std::move(payload);
   frame.summary = "FRAME " + std::to_string(frame.payload.size()) + " bytes";

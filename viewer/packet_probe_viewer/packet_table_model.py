@@ -7,7 +7,8 @@ class PacketTableModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.events: list[PacketEvent] = []
-        self.headers = ["Seq", "Time", "Direction", "Type", "Transport", "Size", "Summary"]
+        self.parent_child_counts: dict[int, int] = {}
+        self.headers = ["Seq", "Parent Seq(s)", "Time", "Direction", "Type", "Transport", "Size", "Summary"]
 
     def rowCount(self, parent=QModelIndex()) -> int:
         return len(self.events)
@@ -23,23 +24,25 @@ class PacketTableModel(QAbstractTableModel):
             event = self.events[index.row()]
             col = index.column()
             if col == 0:
-                return event.seq
+                return getattr(event, "_display_seq", str(event.seq))
             elif col == 1:
-                return format_time_ns(event.time_ns)
+                return ", ".join(map(str, event.parent_seqs)) if event.parent_seqs else "-"
             elif col == 2:
+                return format_time_ns(event.time_ns)
+            elif col == 3:
                 direction = event.direction
                 if direction == "device_to_app":
                     return "DEVICE -> APP"
                 elif direction == "app_to_device":
                     return "APP -> DEVICE"
                 return direction
-            elif col == 3:
-                return event.type
             elif col == 4:
-                return event.transport
+                return event.type
             elif col == 5:
-                return event.size
+                return event.transport
             elif col == 6:
+                return event.size
+            elif col == 7:
                 return event.summary
 
         return None
@@ -55,6 +58,15 @@ class PacketTableModel(QAbstractTableModel):
             self.events.pop(0)
             self.endRemoveRows()
 
+        # Option 2: Format derived events as virtual sequences in GUI (e.g. 66.1)
+        # by tracking child event indices per parent raw packet sequence.
+        p = event.parent_seqs[0] if event.parent_seqs else event.parent_seq
+        if p:
+            self.parent_child_counts[p] = self.parent_child_counts.get(p, 0) + 1
+            event._display_seq = f"{p}.{self.parent_child_counts[p]}"
+        else:
+            event._display_seq = str(event.seq)
+
         row = len(self.events)
         self.beginInsertRows(QModelIndex(), row, row)
         self.events.append(event)
@@ -64,12 +76,23 @@ class PacketTableModel(QAbstractTableModel):
         self.beginResetModel()
         if len(events) > self.MAX_EVENTS:
             events = events[-self.MAX_EVENTS:]
+        
+        self.parent_child_counts.clear()
+        for event in events:
+            p = event.parent_seqs[0] if event.parent_seqs else event.parent_seq
+            if p:
+                self.parent_child_counts[p] = self.parent_child_counts.get(p, 0) + 1
+                event._display_seq = f"{p}.{self.parent_child_counts[p]}"
+            else:
+                event._display_seq = str(event.seq)
+
         self.events = list(events)
         self.endResetModel()
 
     def clear(self):
         self.beginResetModel()
         self.events.clear()
+        self.parent_child_counts.clear()
         self.endResetModel()
 
     def event_at(self, row: int) -> PacketEvent | None:

@@ -15,6 +15,13 @@ class PacketEvent:
         return self.raw.get("parent_seq", 0)
 
     @property
+    def parent_seqs(self) -> list[int]:
+        val = self.raw.get("parent_seqs", [])
+        if not val and self.parent_seq:
+            return [self.parent_seq]
+        return val
+
+    @property
     def time_ns(self) -> int:
         return self.raw.get("time_ns", 0)
 

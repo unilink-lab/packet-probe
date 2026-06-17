@@ -71,6 +71,14 @@ std::string serialize_event_jsonl(PacketEvent const& event) {
   line += std::to_string(event.sequence);
   line += ",\"parent_seq\":";
   line += std::to_string(event.parent_sequence);
+  line += ",\"parent_seqs\":[";
+  for (std::size_t i = 0; i < event.parent_sequences.size(); ++i) {
+    if (i > 0) {
+      line += ",";
+    }
+    line += std::to_string(event.parent_sequences[i]);
+  }
+  line += "]";
   line += ",\"time_ns\":";
   line += std::to_string(event.timestamp_ns);
   line += ",\"session\":\"";
