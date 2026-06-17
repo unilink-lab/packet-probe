@@ -27,6 +27,9 @@ class CaptureProcess(QObject):
         if self._process.state() == QProcess.ProcessState.NotRunning:
             return
 
+        # Close stdin write channel to send EOF to the child process's stdin.
+        # This unblocks C++ std::getline() and allows the CLI to exit cleanly with code 0.
+        self._process.closeWriteChannel()
         self._process.terminate()
         if not self._process.waitForFinished(timeout_ms):
             self._process.kill()
