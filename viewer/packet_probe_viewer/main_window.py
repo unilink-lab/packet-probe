@@ -199,8 +199,9 @@ class MainWindow(QMainWindow):
     def disconnect_socket(self):
         self._launcher_connect_pending = False
         if self.worker:
-            self.worker.stop()
+            worker = self.worker
             self.worker = None
+            worker.stop()
 
     def on_status_changed(self, status: str):
         self.status_label.setText(f"Status: {status}")

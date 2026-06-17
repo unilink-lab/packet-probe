@@ -111,11 +111,6 @@ class IpcClientWorker(QThread):
             except Exception as exc:
                 self.error_occurred.emit(f"IPC stop error: {exc}")
 
-        if self.isRunning() and not self.wait(2000):
-            self.error_occurred.emit("IPC worker did not stop within 2 seconds")
-
-        self._cleanup()
-
     def _cleanup(self):
         client = self._client
         self._client = None
