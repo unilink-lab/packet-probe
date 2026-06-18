@@ -25,8 +25,25 @@ def format_hex_dump(hex_str: str) -> str:
     lines = []
     for offset in range(0, len(bytes_list), 16):
         chunk = bytes_list[offset:offset+16]
-        hex_part = " ".join(chunk)
-        line = f"{offset:04x}  {hex_part}"
+        
+        parts = []
+        for i, val in enumerate(chunk):
+            parts.append(val.lower())
+            if i == 7:
+                parts.append("")
+        hex_part = " ".join(parts)
+        padded_hex_part = hex_part.ljust(48)
+        
+        ascii_chars = []
+        for b_str in chunk:
+            b_val = int(b_str, 16)
+            if 32 <= b_val <= 126:
+                ascii_chars.append(chr(b_val))
+            else:
+                ascii_chars.append(".")
+        ascii_part = "".join(ascii_chars)
+        
+        line = f"{offset:04x}  {padded_hex_part}  |{ascii_part}|"
         lines.append(line)
     return "\n".join(lines)
 

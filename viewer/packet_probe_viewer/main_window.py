@@ -2,9 +2,10 @@ import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
-    QPlainTextEdit, QGroupBox, QTabWidget
+    QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer
+from PySide6.QtGui import QFont
 from .ipc_client import IpcClientWorker
 from .event_model import PacketEvent
 from .packet_table_model import PacketTableModel
@@ -155,17 +156,58 @@ class MainWindow(QMainWindow):
         self.detail_tabs = QTabWidget(self)
 
         self.hex_view = HexView(self)
+        
+        self.text_view = QPlainTextEdit(self)
+        self.text_view.setReadOnly(True)
+        text_font = QFont("Courier New", 10)
+        text_font.setStyleHint(QFont.StyleHint.Monospace)
+        self.text_view.setFont(text_font)
+        self.text_view.setPlaceholderText("Text View")
+
         self.detail_view = EventDetailView(self)
         self.process_output = QPlainTextEdit(self)
         self.process_output.setReadOnly(True)
 
         self.detail_tabs.addTab(self.hex_view, "Hex")
+        self.detail_tabs.addTab(self.text_view, "Text")
         self.detail_tabs.addTab(self.detail_view, "JSON")
         self.detail_tabs.addTab(self.process_output, "Process Log")
 
         main_splitter.addWidget(self.detail_tabs)
 
         main_splitter.setSizes([600, 220])
+
+        # Send Panel (CuteCom style)
+        self.send_group = QGroupBox("Send Message (to Target Device via CLI Stdin)", self)
+        self.send_group.setEnabled(False)
+        send_layout = QHBoxLayout(self.send_group)
+
+        send_layout.addWidget(QLabel("Format:", self))
+        self.text_radio = QRadioButton("Text", self)
+        self.text_radio.setChecked(True)
+        self.text_radio.toggled.connect(self.on_send_format_changed)
+        send_layout.addWidget(self.text_radio)
+
+        self.hex_radio = QRadioButton("Hex", self)
+        send_layout.addWidget(self.hex_radio)
+
+        send_layout.addWidget(QLabel("Data:", self))
+        self.send_input = QLineEdit(self)
+        self.send_input.setPlaceholderText("Type message to send...")
+        self.send_input.returnPressed.connect(self.send_data)
+        send_layout.addWidget(self.send_input)
+
+        send_layout.addWidget(QLabel("EOL:", self))
+        self.eol_combo = QComboBox(self)
+        self.eol_combo.addItems(["None", "LF (\\n)", "CR (\\r)", "CRLF (\\r\\n)"])
+        self.eol_combo.setCurrentIndex(0)
+        send_layout.addWidget(self.eol_combo)
+
+        self.send_btn = QPushButton("Send", self)
+        self.send_btn.clicked.connect(self.send_data)
+        send_layout.addWidget(self.send_btn)
+
+        main_layout.addWidget(self.send_group)
 
         self.message_label = QLabel("", self)
         main_layout.addWidget(self.message_label)
@@ -285,6 +327,7 @@ class MainWindow(QMainWindow):
         self.cli_path_edit.setEnabled(not running)
         self.cli_args_edit.setEnabled(not running)
         self.browse_cli_btn.setEnabled(not running)
+        self.send_group.setEnabled(running)
 
     def _restore_capture_controls(self):
         self._set_capture_controls_running(False)
@@ -305,12 +348,14 @@ class MainWindow(QMainWindow):
         self.table_model.clear()
         self.pending_events.clear()
         self.hex_view.clear()
+        self.text_view.clear()
         self.detail_view.clear()
 
     def on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
         indexes = selected.indexes()
         if not indexes:
             self.hex_view.clear()
+            self.text_view.clear()
             self.detail_view.clear()
             return
 
@@ -319,6 +364,24 @@ class MainWindow(QMainWindow):
         if event:
             self.hex_view.set_payload_hex(event.payload_hex)
             self.detail_view.set_event(event)
+            
+            # Decode text representation for the Text tab
+            if event.payload_hex:
+                import re
+                clean_hex = re.sub(r'[\s:\-]', '', event.payload_hex)
+                try:
+                    raw_bytes = bytes.fromhex(clean_hex)
+                    chars = []
+                    for b in raw_bytes:
+                        if 32 <= b <= 126 or b == 10 or b == 13 or b == 9:
+                            chars.append(chr(b))
+                        else:
+                            chars.append(".")
+                    self.text_view.setPlainText("".join(chars))
+                except Exception as e:
+                    self.text_view.setPlainText(f"Failed to decode text: {e}")
+            else:
+                self.text_view.clear()
 
     def browse_cli_path(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -355,6 +418,7 @@ class MainWindow(QMainWindow):
         from .capture_command import build_capture_command
         try:
             cmd = build_capture_command(executable, args_text, self.generated_ipc_path)
+            self.active_cmd_args = cmd.args
         except ValueError as exc:
             QMessageBox.warning(self, "Warning", str(exc))
             return
@@ -477,6 +541,90 @@ class MainWindow(QMainWindow):
             self.message_label.setText(f"{meta_msg}\n{msg}")
         else:
             self.message_label.setText(msg)
+
+    def on_send_format_changed(self):
+        is_hex = self.hex_radio.isChecked()
+        self.eol_combo.setEnabled(not is_hex)
+        if is_hex:
+            self.send_input.setPlaceholderText("Enter hex bytes (e.g. AA BB CC 00)...")
+        else:
+            self.send_input.setPlaceholderText("Type message to send...")
+
+    def send_data(self):
+        if not self.capture_process.is_running():
+            QMessageBox.warning(self, "Warning", "Cannot send data: CLI capture process is not running.")
+            return
+
+        text = self.send_input.text().strip()
+        if not text:
+            return
+
+        is_hex = self.hex_radio.isChecked()
+
+        # Check active CLI flags
+        is_cli_hex = True  # Default to True because build_capture_command auto-appends --send-hex
+        if hasattr(self, "active_cmd_args"):
+            if "--send-text" in self.active_cmd_args:
+                is_cli_hex = False
+            elif "--send-hex" in self.active_cmd_args:
+                is_cli_hex = True
+
+        if is_cli_hex:
+            if is_hex:
+                # Validate and clean hex input
+                import re
+                clean_hex = re.sub(r'(0x|0X|[\s:\-])', '', text).lower()
+                if not clean_hex or not all(c in '0123456789abcdefABCDEF' for c in clean_hex) or len(clean_hex) % 2 != 0:
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Hex",
+                        "Please enter a valid hex string (e.g. AA BB CC or AABBCC).\n"
+                        "Note: Each byte must have two hex digits."
+                    )
+                    return
+                write_payload = clean_hex + "\n"
+            else:
+                # Prepare text with EOL and encode to Hex
+                eol_idx = self.eol_combo.currentIndex()
+                # 0: None, 1: LF (\n), 2: CR (\r), 3: CRLF (\r\n)
+                if eol_idx == 1:
+                    text += "\n"
+                elif eol_idx == 2:
+                    text += "\r"
+                elif eol_idx == 3:
+                    text += "\r\n"
+                
+                try:
+                    write_payload = text.encode("utf-8").hex() + "\n"
+                except Exception as exc:
+                    QMessageBox.critical(self, "Error", f"Failed to encode text to hex bytes: {exc}")
+                    return
+        else:
+            # CLI is running in --send-text mode
+            if is_hex:
+                QMessageBox.warning(
+                    self,
+                    "Incompatible Mode",
+                    "CLI is running in --send-text mode, which cannot receive raw hex bytes.\n"
+                    "Please remove '--send-text' from Args to allow dynamic hex sending."
+                )
+                return
+            else:
+                # Prepare text with EOL
+                eol_idx = self.eol_combo.currentIndex()
+                if eol_idx == 1:
+                    text += "\n"
+                elif eol_idx == 2:
+                    text += "\r"
+                elif eol_idx == 3:
+                    text += "\r\n"
+                write_payload = text + "\n"
+
+        try:
+            self.capture_process.write_stdin(write_payload.encode("utf-8"))
+            self.send_input.clear()
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to send data: {exc}")
 
     def closeEvent(self, event):
         self.stop_capture()

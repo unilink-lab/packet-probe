@@ -1,4 +1,5 @@
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtGui import QColor
 from .event_model import PacketEvent, format_time_ns
 
 class PacketTableModel(QAbstractTableModel):
@@ -18,6 +19,17 @@ class PacketTableModel(QAbstractTableModel):
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
+            return None
+
+        if role == Qt.ItemDataRole.ForegroundRole:
+            event = self.events[index.row()]
+            if event.type == "error":
+                return QColor("#c92a2a")  # Premium Red for errors
+            direction = event.direction
+            if direction == "app_to_device" or direction == "tx":
+                return QColor("#0b7285")  # Premium Teal for TX (App -> Device)
+            elif direction == "device_to_app" or direction == "rx":
+                return QColor("#d9480f")  # Premium Orange/Red for RX (Device -> App)
             return None
 
         if role == Qt.ItemDataRole.DisplayRole:

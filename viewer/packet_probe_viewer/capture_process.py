@@ -23,6 +23,13 @@ class CaptureProcess(QObject):
             self._process.setWorkingDirectory(working_dir)
         self._process.start(executable, args)
 
+    def write_stdin(self, data: bytes) -> int:
+        if self.is_running():
+            bytes_written = self._process.write(data)
+            self._process.waitForBytesWritten(100)
+            return bytes_written
+        return 0
+
     def stop(self, timeout_ms: int = 3000) -> None:
         if self._process.state() == QProcess.ProcessState.NotRunning:
             return

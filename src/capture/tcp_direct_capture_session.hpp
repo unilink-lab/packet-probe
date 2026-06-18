@@ -37,7 +37,7 @@ class TcpDirectCaptureSession : public CaptureSession {
   struct Impl;
 
   PacketEvent make_event(Direction direction, EventType type, std::vector<std::uint8_t> payload,
-                         std::string summary);
+                         std::string source_endpoint, std::string destination_endpoint, std::string summary);
   void emit(PacketEvent event);
 
   TcpDirectCaptureOptions options_;
