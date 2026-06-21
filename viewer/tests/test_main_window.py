@@ -84,27 +84,35 @@ def test_main_window_settings_and_presets(qtbot):
     window = MainWindow(settings_org="UnilinkLabTest", settings_app="PacketProbeViewerTest")
     qtbot.addWidget(window)
 
-    # 1. Verify default preset combo setup and auto-change behavior
-    assert window.preset_combo.count() == 4
-    assert window.preset_combo.itemText(1) == "UDP Loopback (19085)"
+    # 1. Verify default mode combo setup and auto-change behavior
+    assert window.mode_combo.count() == 5
+    assert window.mode_combo.itemText(0) == "UDP"
+    assert window.mode_combo.itemText(1) == "TCP Client"
 
-    # Change to UDP Loopback preset
-    window.preset_combo.setCurrentIndex(1)
-    assert "udp" in window.cli_args_edit.text()
-    assert "--target-port 19085" in window.cli_args_edit.text()
+    # Select TCP Client mode
+    window.mode_combo.setCurrentIndex(1)
+    assert window.param_stack.currentIndex() == 1
+    assert "tcp-client" in window.cli_args_edit.text()
 
-    # Edit arguments manually -> preset combo should change back to "Custom" (index 0)
-    window.cli_args_edit.setText("udp --custom-flag")
-    assert window.preset_combo.currentIndex() == 0
+    # Modify Remote Host in TCP Client mode
+    window.tcp_cli_host.setText("192.168.1.100")
+    window.tcp_cli_port.setText("8080")
+    # Verify the read-only preview updates dynamically
+    assert "tcp-client --host 192.168.1.100 --port 8080" in window.cli_args_edit.text()
 
     # 2. Verify QSettings persistence (save and load)
     # Modify settings values
     window.cli_path_edit.setText("/mock/path/packet-probe")
-    window.cli_args_edit.setText("tcp-client --custom")
-    window.preset_combo.setCurrentIndex(0)
     window.socket_path_edit.setText("/mock/path/socket")
     window.hex_radio.setChecked(True)
     window.eol_combo.setCurrentIndex(2) # CR (\r)
+
+    # Change to Serial mode and customize parameters
+    window.mode_combo.setCurrentIndex(4) # Serial
+    window.ser_port.setText("/dev/ttyACM0")
+    window.ser_baud.setCurrentText("9600")
+    window.log_file_edit.setText("serial_test.jsonl")
+    window.extra_args_edit.setText("--hex")
 
     # Save settings
     window.save_settings()
@@ -115,8 +123,15 @@ def test_main_window_settings_and_presets(qtbot):
 
     # Assert new window loaded saved settings
     assert new_window.cli_path_edit.text() == "/mock/path/packet-probe"
-    assert new_window.cli_args_edit.text() == "tcp-client --custom"
-    assert new_window.preset_combo.currentIndex() == 0
     assert new_window.socket_path_edit.text() == "/mock/path/socket"
     assert new_window.hex_radio.isChecked() is True
     assert new_window.eol_combo.currentIndex() == 2
+
+    # Assert new window restored Serial mode and fields
+    assert new_window.mode_combo.currentIndex() == 4
+    assert new_window.ser_port.text() == "/dev/ttyACM0"
+    assert new_window.ser_baud.currentText() == "9600"
+    assert new_window.log_file_edit.text() == "serial_test.jsonl"
+    assert new_window.extra_args_edit.text() == "--hex"
+    # Verify generated args preview was loaded correctly
+    assert "serial --port /dev/ttyACM0 --baudrate 9600 --log serial_test.jsonl --hex" in new_window.cli_args_edit.text()

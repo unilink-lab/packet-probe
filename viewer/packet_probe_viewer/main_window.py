@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
-    QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton
+    QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton, QStackedWidget
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer, QSettings
 from PySide6.QtGui import QFont
@@ -103,24 +103,159 @@ class MainWindow(QMainWindow):
         path_layout.addWidget(self.browse_cli_btn)
         top_control_layout.addLayout(path_layout)
 
-        # Args & Presets Row
-        args_layout = QHBoxLayout()
-        args_layout.addWidget(QLabel("Args:", self))
-        self.cli_args_edit = QLineEdit(self)
-        self.cli_args_edit.textChanged.connect(self.on_args_changed)
-        args_layout.addWidget(self.cli_args_edit)
+        # Connection Config Group
+        self.conn_group = QGroupBox("Connection Configuration", self)
+        conn_layout = QVBoxLayout(self.conn_group)
 
-        args_layout.addWidget(QLabel("Presets:", self))
-        self.preset_combo = QComboBox(self)
-        self.preset_combo.addItems([
-            "Custom",
-            "UDP Loopback (19085)",
-            "TCP Client Loopback (19085)",
-            "TCP Server Loopback (19085)"
+        # Mode row
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("Mode:", self))
+        self.mode_combo = QComboBox(self)
+        self.mode_combo.addItems(["UDP", "TCP Client", "TCP Server", "TCP Proxy", "Serial"])
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        mode_layout.addWidget(self.mode_combo)
+        mode_layout.addStretch()
+        conn_layout.addLayout(mode_layout)
+
+        # Parameter Stacked Widget
+        self.param_stack = QStackedWidget(self)
+        conn_layout.addWidget(self.param_stack)
+
+        # 1. UDP Panel
+        udp_widget = QWidget(self)
+        udp_layout = QHBoxLayout(udp_widget)
+        udp_layout.setContentsMargins(0, 5, 0, 5)
+        
+        udp_layout.addWidget(QLabel("Bind Host:", self))
+        self.udp_bind_host = QLineEdit("0.0.0.0", self)
+        self.udp_bind_host.textChanged.connect(self.update_generated_args)
+        udp_layout.addWidget(self.udp_bind_host)
+        
+        udp_layout.addWidget(QLabel("Bind Port:", self))
+        self.udp_bind_port = QLineEdit("19000", self)
+        self.udp_bind_port.textChanged.connect(self.update_generated_args)
+        udp_layout.addWidget(self.udp_bind_port)
+        
+        udp_layout.addWidget(QLabel("Target Host:", self))
+        self.udp_target_host = QLineEdit("127.0.0.1", self)
+        self.udp_target_host.textChanged.connect(self.update_generated_args)
+        udp_layout.addWidget(self.udp_target_host)
+        
+        udp_layout.addWidget(QLabel("Target Port:", self))
+        self.udp_target_port = QLineEdit("19085", self)
+        self.udp_target_port.textChanged.connect(self.update_generated_args)
+        udp_layout.addWidget(self.udp_target_port)
+        
+        self.param_stack.addWidget(udp_widget)
+
+        # 2. TCP Client Panel
+        tcp_client_widget = QWidget(self)
+        tcp_client_layout = QHBoxLayout(tcp_client_widget)
+        tcp_client_layout.setContentsMargins(0, 5, 0, 5)
+        
+        tcp_client_layout.addWidget(QLabel("Remote Host:", self))
+        self.tcp_cli_host = QLineEdit("127.0.0.1", self)
+        self.tcp_cli_host.textChanged.connect(self.update_generated_args)
+        tcp_client_layout.addWidget(self.tcp_cli_host)
+        
+        tcp_client_layout.addWidget(QLabel("Remote Port:", self))
+        self.tcp_cli_port = QLineEdit("19085", self)
+        self.tcp_cli_port.textChanged.connect(self.update_generated_args)
+        tcp_client_layout.addWidget(self.tcp_cli_port)
+        
+        self.param_stack.addWidget(tcp_client_widget)
+
+        # 3. TCP Server Panel
+        tcp_server_widget = QWidget(self)
+        tcp_server_layout = QHBoxLayout(tcp_server_widget)
+        tcp_server_layout.setContentsMargins(0, 5, 0, 5)
+        
+        tcp_server_layout.addWidget(QLabel("Listen Host:", self))
+        self.tcp_srv_host = QLineEdit("0.0.0.0", self)
+        self.tcp_srv_host.textChanged.connect(self.update_generated_args)
+        tcp_server_layout.addWidget(self.tcp_srv_host)
+        
+        tcp_server_layout.addWidget(QLabel("Listen Port:", self))
+        self.tcp_srv_port = QLineEdit("19085", self)
+        self.tcp_srv_port.textChanged.connect(self.update_generated_args)
+        tcp_server_layout.addWidget(self.tcp_srv_port)
+        
+        self.param_stack.addWidget(tcp_server_widget)
+
+        # 4. TCP Proxy Panel
+        tcp_proxy_widget = QWidget(self)
+        tcp_proxy_layout = QHBoxLayout(tcp_proxy_widget)
+        tcp_proxy_layout.setContentsMargins(0, 5, 0, 5)
+        
+        tcp_proxy_layout.addWidget(QLabel("Listen Host:", self))
+        self.tcp_prx_listen_host = QLineEdit("127.0.0.1", self)
+        self.tcp_prx_listen_host.textChanged.connect(self.update_generated_args)
+        tcp_proxy_layout.addWidget(self.tcp_prx_listen_host)
+        
+        tcp_proxy_layout.addWidget(QLabel("Listen Port:", self))
+        self.tcp_prx_listen_port = QLineEdit("19000", self)
+        self.tcp_prx_listen_port.textChanged.connect(self.update_generated_args)
+        tcp_proxy_layout.addWidget(self.tcp_prx_listen_port)
+        
+        tcp_proxy_layout.addWidget(QLabel("Target Host:", self))
+        self.tcp_prx_target_host = QLineEdit("127.0.0.1", self)
+        self.tcp_prx_target_host.textChanged.connect(self.update_generated_args)
+        tcp_proxy_layout.addWidget(self.tcp_prx_target_host)
+        
+        tcp_proxy_layout.addWidget(QLabel("Target Port:", self))
+        self.tcp_prx_target_port = QLineEdit("19085", self)
+        self.tcp_prx_target_port.textChanged.connect(self.update_generated_args)
+        tcp_proxy_layout.addWidget(self.tcp_prx_target_port)
+        
+        self.param_stack.addWidget(tcp_proxy_widget)
+
+        # 5. Serial Panel
+        serial_widget = QWidget(self)
+        serial_layout = QHBoxLayout(serial_widget)
+        serial_layout.setContentsMargins(0, 5, 0, 5)
+        
+        serial_layout.addWidget(QLabel("Port Path:", self))
+        self.ser_port = QLineEdit("/dev/ttyUSB0", self)
+        self.ser_port.textChanged.connect(self.update_generated_args)
+        serial_layout.addWidget(self.ser_port)
+        
+        serial_layout.addWidget(QLabel("Baud Rate:", self))
+        self.ser_baud = QComboBox(self)
+        self.ser_baud.setEditable(True)
+        self.ser_baud.addItems([
+            "1200", "2400", "4800", "9600", "19200", "38400",
+            "57600", "115200", "230400", "460800", "921600"
         ])
-        self.preset_combo.currentIndexChanged.connect(self.on_preset_changed)
-        args_layout.addWidget(self.preset_combo)
-        top_control_layout.addLayout(args_layout)
+        self.ser_baud.setCurrentText("115200")
+        self.ser_baud.currentIndexChanged.connect(self.update_generated_args)
+        self.ser_baud.editTextChanged.connect(self.update_generated_args)
+        serial_layout.addWidget(self.ser_baud)
+        
+        self.param_stack.addWidget(serial_widget)
+
+        # Common Row
+        common_layout = QHBoxLayout()
+        common_layout.addWidget(QLabel("Log File:", self))
+        self.log_file_edit = QLineEdit("udp.jsonl", self)
+        self.log_file_edit.textChanged.connect(self.update_generated_args)
+        common_layout.addWidget(self.log_file_edit)
+
+        common_layout.addWidget(QLabel("Extra Args:", self))
+        self.extra_args_edit = QLineEdit("", self)
+        self.extra_args_edit.setPlaceholderText("e.g. --latency")
+        self.extra_args_edit.textChanged.connect(self.update_generated_args)
+        common_layout.addWidget(self.extra_args_edit)
+        conn_layout.addLayout(common_layout)
+
+        # Generated Args Row (Read-only preview)
+        preview_layout = QHBoxLayout()
+        preview_layout.addWidget(QLabel("Args Preview:", self))
+        self.cli_args_edit = QLineEdit(self)
+        self.cli_args_edit.setReadOnly(True)
+        preview_layout.addWidget(self.cli_args_edit)
+        conn_layout.addLayout(preview_layout)
+
+        top_control_layout.addWidget(self.conn_group)
 
         # Action Buttons Row
         action_btn_layout = QHBoxLayout()
@@ -365,8 +500,8 @@ class MainWindow(QMainWindow):
         self.start_capture_btn.setEnabled(not running)
         self.stop_capture_btn.setEnabled(running)
         self.cli_path_edit.setEnabled(not running)
-        self.cli_args_edit.setEnabled(not running)
         self.browse_cli_btn.setEnabled(not running)
+        self.conn_group.setEnabled(not running)
         self.send_group.setEnabled(running)
 
     def _restore_capture_controls(self):
@@ -671,15 +806,6 @@ class MainWindow(QMainWindow):
         cli_path = self.settings.value("cli_path", default_cli)
         self.cli_path_edit.setText(cli_path)
 
-        default_args = "udp --bind-port 19000 --target-host 127.0.0.1 --target-port 19085 --log udp.jsonl"
-        cli_args = self.settings.value("cli_args", default_args)
-        self.cli_args_edit.setText(cli_args)
-
-        preset_idx = int(self.settings.value("preset_index", 1))  # Default to UDP preset
-        self.preset_combo.setCurrentIndex(preset_idx)
-        if preset_idx == 0:
-            self.cli_args_edit.setText(cli_args)
-
         socket_path = self.settings.value("socket_path", self.initial_socket_path)
         self.socket_path_edit.setText(socket_path)
 
@@ -692,28 +818,147 @@ class MainWindow(QMainWindow):
         eol_index = int(self.settings.value("eol_index", 0))
         self.eol_combo.setCurrentIndex(eol_index)
 
+        # Load Connection mode and fields
+        mode_idx = int(self.settings.value("mode_index", 0))
+        self.mode_combo.setCurrentIndex(mode_idx)
+
+        # UDP fields
+        self.udp_bind_host.setText(self.settings.value("udp_bind_host", "0.0.0.0"))
+        self.udp_bind_port.setText(self.settings.value("udp_bind_port", "19000"))
+        self.udp_target_host.setText(self.settings.value("udp_target_host", "127.0.0.1"))
+        self.udp_target_port.setText(self.settings.value("udp_target_port", "19085"))
+
+        # TCP Client fields
+        self.tcp_cli_host.setText(self.settings.value("tcp_cli_host", "127.0.0.1"))
+        self.tcp_cli_port.setText(self.settings.value("tcp_cli_port", "19085"))
+
+        # TCP Server fields
+        self.tcp_srv_host.setText(self.settings.value("tcp_srv_host", "0.0.0.0"))
+        self.tcp_srv_port.setText(self.settings.value("tcp_srv_port", "19085"))
+
+        # TCP Proxy fields
+        self.tcp_prx_listen_host.setText(self.settings.value("tcp_prx_listen_host", "127.0.0.1"))
+        self.tcp_prx_listen_port.setText(self.settings.value("tcp_prx_listen_port", "19000"))
+        self.tcp_prx_target_host.setText(self.settings.value("tcp_prx_target_host", "127.0.0.1"))
+        self.tcp_prx_target_port.setText(self.settings.value("tcp_prx_target_port", "19085"))
+
+        # Serial fields
+        self.ser_port.setText(self.settings.value("ser_port", "/dev/ttyUSB0"))
+        self.ser_baud.setCurrentText(self.settings.value("ser_baud", "115200"))
+
+        # Common fields
+        self.log_file_edit.setText(self.settings.value("log_file", "udp.jsonl"))
+        self.extra_args_edit.setText(self.settings.value("extra_args", ""))
+
+        self.update_generated_args()
+
     def save_settings(self):
         self.settings.setValue("cli_path", self.cli_path_edit.text().strip())
-        self.settings.setValue("cli_args", self.cli_args_edit.text().strip())
-        self.settings.setValue("preset_index", self.preset_combo.currentIndex())
         self.settings.setValue("socket_path", self.socket_path_edit.text().strip())
         self.settings.setValue("send_in_hex", "true" if self.hex_radio.isChecked() else "false")
         self.settings.setValue("eol_index", self.eol_combo.currentIndex())
 
-    def on_preset_changed(self, index: int):
-        self.cli_args_edit.blockSignals(True)
-        if index == 1:
-            self.cli_args_edit.setText("udp --bind-port 19000 --target-host 127.0.0.1 --target-port 19085 --log udp.jsonl")
-        elif index == 2:
-            self.cli_args_edit.setText("tcp-client --host 127.0.0.1 --port 19085 --log tcp_client.jsonl")
-        elif index == 3:
-            self.cli_args_edit.setText("tcp-server --bind-host 127.0.0.1 --bind-port 19085 --log tcp_server.jsonl")
-        self.cli_args_edit.blockSignals(False)
+        # Save Connection fields
+        self.settings.setValue("mode_index", self.mode_combo.currentIndex())
+        self.settings.setValue("udp_bind_host", self.udp_bind_host.text().strip())
+        self.settings.setValue("udp_bind_port", self.udp_bind_port.text().strip())
+        self.settings.setValue("udp_target_host", self.udp_target_host.text().strip())
+        self.settings.setValue("udp_target_port", self.udp_target_port.text().strip())
 
-    def on_args_changed(self):
-        self.preset_combo.blockSignals(True)
-        self.preset_combo.setCurrentIndex(0)
-        self.preset_combo.blockSignals(False)
+        self.settings.setValue("tcp_cli_host", self.tcp_cli_host.text().strip())
+        self.settings.setValue("tcp_cli_port", self.tcp_cli_port.text().strip())
+
+        self.settings.setValue("tcp_srv_host", self.tcp_srv_host.text().strip())
+        self.settings.setValue("tcp_srv_port", self.tcp_srv_port.text().strip())
+
+        self.settings.setValue("tcp_prx_listen_host", self.tcp_prx_listen_host.text().strip())
+        self.settings.setValue("tcp_prx_listen_port", self.tcp_prx_listen_port.text().strip())
+        self.settings.setValue("tcp_prx_target_host", self.tcp_prx_target_host.text().strip())
+        self.settings.setValue("tcp_prx_target_port", self.tcp_prx_target_port.text().strip())
+
+        self.settings.setValue("ser_port", self.ser_port.text().strip())
+        self.settings.setValue("ser_baud", self.ser_baud.currentText().strip())
+
+        self.settings.setValue("log_file", self.log_file_edit.text().strip())
+        self.settings.setValue("extra_args", self.extra_args_edit.text().strip())
+
+    def on_mode_changed(self, index: int):
+        self.param_stack.setCurrentIndex(index)
+        
+        # Auto-update default log file name based on mode
+        mode = self.mode_combo.currentText()
+        if mode == "UDP":
+            self.log_file_edit.setText("udp.jsonl")
+        elif mode == "TCP Client":
+            self.log_file_edit.setText("tcp_client.jsonl")
+        elif mode == "TCP Server":
+            self.log_file_edit.setText("tcp_server.jsonl")
+        elif mode == "TCP Proxy":
+            self.log_file_edit.setText("tcp_proxy.jsonl")
+        elif mode == "Serial":
+            self.log_file_edit.setText("serial.jsonl")
+            
+        self.update_generated_args()
+
+    def update_generated_args(self):
+        mode = self.mode_combo.currentText()
+        args = []
+
+        if mode == "UDP":
+            args.append("udp")
+            if self.udp_bind_host.text().strip():
+                args.extend(["--bind-host", self.udp_bind_host.text().strip()])
+            if self.udp_bind_port.text().strip():
+                args.extend(["--bind-port", self.udp_bind_port.text().strip()])
+            if self.udp_target_host.text().strip():
+                args.extend(["--target-host", self.udp_target_host.text().strip()])
+            if self.udp_target_port.text().strip():
+                args.extend(["--target-port", self.udp_target_port.text().strip()])
+
+        elif mode == "TCP Client":
+            args.append("tcp-client")
+            if self.tcp_cli_host.text().strip():
+                args.extend(["--host", self.tcp_cli_host.text().strip()])
+            if self.tcp_cli_port.text().strip():
+                args.extend(["--port", self.tcp_cli_port.text().strip()])
+
+        elif mode == "TCP Server":
+            args.append("tcp-server")
+            if self.tcp_srv_host.text().strip():
+                args.extend(["--listen-host", self.tcp_srv_host.text().strip()])
+            if self.tcp_srv_port.text().strip():
+                args.extend(["--listen-port", self.tcp_srv_port.text().strip()])
+
+        elif mode == "TCP Proxy":
+            args.append("tcp-proxy")
+            if self.tcp_prx_listen_host.text().strip():
+                args.extend(["--listen-host", self.tcp_prx_listen_host.text().strip()])
+            if self.tcp_prx_listen_port.text().strip():
+                args.extend(["--listen-port", self.tcp_prx_listen_port.text().strip()])
+            if self.tcp_prx_target_host.text().strip():
+                args.extend(["--target-host", self.tcp_prx_target_host.text().strip()])
+            if self.tcp_prx_target_port.text().strip():
+                args.extend(["--target-port", self.tcp_prx_target_port.text().strip()])
+
+        elif mode == "Serial":
+            args.append("serial")
+            if self.ser_port.text().strip():
+                args.extend(["--port", self.ser_port.text().strip()])
+            if self.ser_baud.currentText().strip():
+                args.extend(["--baudrate", self.ser_baud.currentText().strip()])
+
+        # Common option: log file
+        log_file = self.log_file_edit.text().strip()
+        if log_file:
+            args.extend(["--log", log_file])
+
+        # Common option: extra args
+        extra = self.extra_args_edit.text().strip()
+        if extra:
+            args.append(extra)
+
+        generated_str = " ".join(args)
+        self.cli_args_edit.setText(generated_str)
 
     def closeEvent(self, event):
         self.save_settings()
