@@ -699,46 +699,38 @@ class MainWindow(QMainWindow):
         self.table_view.selectionModel().selectionChanged.connect(self.on_selection_changed)
         main_splitter.addWidget(self.table_view)
 
-        # Send Panel (CuteCom style, relocated to bottom-right column)
+        # Send Panel (CuteCom style, positioned in the middle row)
         self.send_group = QGroupBox("Send Message (to Target Device via CLI Stdin)", self)
         self.send_group.setEnabled(False)
-        
-        send_layout = QGridLayout(self.send_group)
-        send_layout.setSpacing(6)
-        send_layout.setContentsMargins(10, 10, 10, 10)
+        send_layout = QHBoxLayout(self.send_group)
 
-        # Row 0: Format
-        format_layout = QHBoxLayout()
+        send_layout.addWidget(QLabel("Format:", self))
         self.text_radio = QRadioButton("Text", self)
         self.text_radio.setChecked(True)
         self.text_radio.toggled.connect(self.on_send_format_changed)
-        format_layout.addWidget(self.text_radio)
-        self.hex_radio = QRadioButton("Hex", self)
-        format_layout.addWidget(self.hex_radio)
-        format_layout.addStretch()
-        send_layout.addWidget(QLabel("Format:"), 0, 0)
-        send_layout.addLayout(format_layout, 0, 1, 1, 2)
+        send_layout.addWidget(self.text_radio)
 
-        # Row 1: Data
-        send_layout.addWidget(QLabel("Data:"), 1, 0)
+        self.hex_radio = QRadioButton("Hex", self)
+        send_layout.addWidget(self.hex_radio)
+
+        send_layout.addWidget(QLabel("Data:", self))
         self.send_input = QLineEdit(self)
         self.send_input.setPlaceholderText("Type message to send...")
         self.send_input.returnPressed.connect(self.send_data)
-        send_layout.addWidget(self.send_input, 1, 1, 1, 2)
+        send_layout.addWidget(self.send_input)
 
-        # Row 2: EOL & Send
-        send_layout.addWidget(QLabel("EOL:"), 2, 0)
+        send_layout.addWidget(QLabel("EOL:", self))
         self.eol_combo = QComboBox(self)
         self.eol_combo.addItems(["None", "LF (\\n)", "CR (\\r)", "CRLF (\\r\\n)"])
         self.eol_combo.setCurrentIndex(0)
-        send_layout.addWidget(self.eol_combo, 2, 1)
+        send_layout.addWidget(self.eol_combo)
 
         self.send_btn = QPushButton("Send", self)
         self.send_btn.setObjectName("send_btn")
         self.send_btn.clicked.connect(self.send_data)
-        send_layout.addWidget(self.send_btn, 2, 2)
+        send_layout.addWidget(self.send_btn)
 
-        # Bottom Detail Tabs (relocated to bottom-left column)
+        # Bottom Detail Tabs (positioned in the bottom row)
         self.detail_tabs = QTabWidget(self)
 
         self.hex_view = HexView(self)
@@ -759,15 +751,11 @@ class MainWindow(QMainWindow):
         self.detail_tabs.addTab(self.detail_view, "JSON")
         self.detail_tabs.addTab(self.process_output, "Process Log")
 
-        # Bottom Horizontal Splitter
-        bottom_splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        bottom_splitter.addWidget(self.detail_tabs)
-        bottom_splitter.addWidget(self.send_group)
+        # Add widgets in order to vertical main_splitter
+        main_splitter.addWidget(self.send_group)
+        main_splitter.addWidget(self.detail_tabs)
 
-        main_splitter.addWidget(bottom_splitter)
-
-        main_splitter.setSizes([500, 300])
-        bottom_splitter.setSizes([600, 350])
+        main_splitter.setSizes([450, 75, 275])
 
         self.message_label = QLabel("", self)
         main_layout.addWidget(self.message_label)
