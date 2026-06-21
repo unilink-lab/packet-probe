@@ -24,12 +24,12 @@ class PacketTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ForegroundRole:
             event = self.events[index.row()]
             if event.type == "error":
-                return QColor("#c92a2a")  # Premium Red for errors
+                return QColor("#fc8181")  # High-contrast bright red for dark theme
             direction = event.direction
             if direction == "app_to_device" or direction == "tx":
-                return QColor("#0b7285")  # Premium Teal for TX (App -> Device)
+                return QColor("#4fd1c5")  # High-contrast bright teal for dark theme
             elif direction == "device_to_app" or direction == "rx":
-                return QColor("#d9480f")  # Premium Orange/Red for RX (Device -> App)
+                return QColor("#ed8936")  # High-contrast bright orange for dark theme
             return None
 
         if role == Qt.ItemDataRole.DisplayRole:
