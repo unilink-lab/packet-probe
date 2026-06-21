@@ -3,7 +3,8 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
-    QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton, QStackedWidget
+    QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton, QStackedWidget,
+    QSpinBox, QCheckBox
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer, QSettings
 from PySide6.QtGui import QFont
@@ -304,6 +305,33 @@ QMenu::item:selected {
     background-color: #319795;
     color: #ffffff;
 }
+
+/* Checkboxes */
+QCheckBox {
+    color: #cbd5e0;
+    font-weight: 500;
+}
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid #4a5568;
+    background-color: #1e1e26;
+}
+QCheckBox::indicator:checked {
+    background-color: #319795;
+    border: 1px solid #319795;
+}
+QCheckBox::indicator:hover {
+    border: 1px solid #319795;
+}
+
+/* Checked PushButtons (e.g. settings toggle active) */
+QPushButton:checked {
+    background-color: #319795;
+    color: #ffffff;
+    border: 1px solid #2b6cb0;
+}
 """
 
 def format_metadata_message(metadata: dict | None) -> str:
@@ -358,21 +386,41 @@ class MainWindow(QMainWindow):
         top_control_layout = QVBoxLayout(top_control_widget)
         top_control_layout.setContentsMargins(0, 0, 0, 0)
 
-        # CLI Path Row
-        path_layout = QHBoxLayout()
-        path_layout.addWidget(QLabel("CLI Path:", self))
+        # Row 1: CLI Path & Socket Path & Settings Toggle (Compact 1 Row)
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("CLI Path:", self))
         self.cli_path_edit = QLineEdit(self)
-        path_layout.addWidget(self.cli_path_edit)
+        header_layout.addWidget(self.cli_path_edit)
         self.browse_cli_btn = QPushButton("Browse", self)
         self.browse_cli_btn.clicked.connect(self.browse_cli_path)
-        path_layout.addWidget(self.browse_cli_btn)
-        top_control_layout.addLayout(path_layout)
+        header_layout.addWidget(self.browse_cli_btn)
 
-        # Connection Config Group
-        self.conn_group = QGroupBox("Connection Configuration", self)
+        header_layout.addWidget(QLabel("Socket Path:", self))
+        self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
+        header_layout.addWidget(self.socket_path_edit)
+        self.connect_btn = QPushButton("Connect", self)
+        self.connect_btn.clicked.connect(self.toggle_connection)
+        header_layout.addWidget(self.connect_btn)
+
+        self.toggle_settings_btn = QPushButton("⚙️ Settings", self)
+        self.toggle_settings_btn.setCheckable(True)
+        self.toggle_settings_btn.setChecked(True)
+        self.toggle_settings_btn.clicked.connect(self.toggle_settings_visibility)
+        header_layout.addWidget(self.toggle_settings_btn)
+        top_control_layout.addLayout(header_layout)
+
+        # Connection Config Group (Collapsible, Split Layout internally)
+        self.conn_group = QGroupBox("Configuration", self)
         conn_layout = QVBoxLayout(self.conn_group)
 
-        # Mode row
+        # Split Config into Left (Connection) and Right (Decoder)
+        split_config_layout = QHBoxLayout()
+
+        # Left Widget: Connection Settings
+        left_widget = QWidget(self)
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
         mode_layout = QHBoxLayout()
         mode_layout.addWidget(QLabel("Mode:", self))
         self.mode_combo = QComboBox(self)
@@ -380,110 +428,92 @@ class MainWindow(QMainWindow):
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
         mode_layout.addStretch()
-        conn_layout.addLayout(mode_layout)
+        left_layout.addLayout(mode_layout)
 
         # Parameter Stacked Widget
         self.param_stack = QStackedWidget(self)
-        conn_layout.addWidget(self.param_stack)
+        left_layout.addWidget(self.param_stack)
 
         # 1. UDP Panel
         udp_widget = QWidget(self)
         udp_layout = QHBoxLayout(udp_widget)
         udp_layout.setContentsMargins(0, 5, 0, 5)
-        
         udp_layout.addWidget(QLabel("Bind Host:", self))
         self.udp_bind_host = QLineEdit("0.0.0.0", self)
         self.udp_bind_host.textChanged.connect(self.update_generated_args)
         udp_layout.addWidget(self.udp_bind_host)
-        
         udp_layout.addWidget(QLabel("Bind Port:", self))
         self.udp_bind_port = QLineEdit("19000", self)
         self.udp_bind_port.textChanged.connect(self.update_generated_args)
         udp_layout.addWidget(self.udp_bind_port)
-        
         udp_layout.addWidget(QLabel("Target Host:", self))
         self.udp_target_host = QLineEdit("127.0.0.1", self)
         self.udp_target_host.textChanged.connect(self.update_generated_args)
         udp_layout.addWidget(self.udp_target_host)
-        
         udp_layout.addWidget(QLabel("Target Port:", self))
         self.udp_target_port = QLineEdit("19085", self)
         self.udp_target_port.textChanged.connect(self.update_generated_args)
         udp_layout.addWidget(self.udp_target_port)
-        
         self.param_stack.addWidget(udp_widget)
 
         # 2. TCP Client Panel
         tcp_client_widget = QWidget(self)
         tcp_client_layout = QHBoxLayout(tcp_client_widget)
         tcp_client_layout.setContentsMargins(0, 5, 0, 5)
-        
         tcp_client_layout.addWidget(QLabel("Remote Host:", self))
         self.tcp_cli_host = QLineEdit("127.0.0.1", self)
         self.tcp_cli_host.textChanged.connect(self.update_generated_args)
         tcp_client_layout.addWidget(self.tcp_cli_host)
-        
         tcp_client_layout.addWidget(QLabel("Remote Port:", self))
         self.tcp_cli_port = QLineEdit("19085", self)
         self.tcp_cli_port.textChanged.connect(self.update_generated_args)
         tcp_client_layout.addWidget(self.tcp_cli_port)
-        
         self.param_stack.addWidget(tcp_client_widget)
 
         # 3. TCP Server Panel
         tcp_server_widget = QWidget(self)
         tcp_server_layout = QHBoxLayout(tcp_server_widget)
         tcp_server_layout.setContentsMargins(0, 5, 0, 5)
-        
         tcp_server_layout.addWidget(QLabel("Listen Host:", self))
         self.tcp_srv_host = QLineEdit("0.0.0.0", self)
         self.tcp_srv_host.textChanged.connect(self.update_generated_args)
         tcp_server_layout.addWidget(self.tcp_srv_host)
-        
         tcp_server_layout.addWidget(QLabel("Listen Port:", self))
         self.tcp_srv_port = QLineEdit("19085", self)
         self.tcp_srv_port.textChanged.connect(self.update_generated_args)
         tcp_server_layout.addWidget(self.tcp_srv_port)
-        
         self.param_stack.addWidget(tcp_server_widget)
 
         # 4. TCP Proxy Panel
         tcp_proxy_widget = QWidget(self)
         tcp_proxy_layout = QHBoxLayout(tcp_proxy_widget)
         tcp_proxy_layout.setContentsMargins(0, 5, 0, 5)
-        
         tcp_proxy_layout.addWidget(QLabel("Listen Host:", self))
         self.tcp_prx_listen_host = QLineEdit("127.0.0.1", self)
         self.tcp_prx_listen_host.textChanged.connect(self.update_generated_args)
         tcp_proxy_layout.addWidget(self.tcp_prx_listen_host)
-        
         tcp_proxy_layout.addWidget(QLabel("Listen Port:", self))
         self.tcp_prx_listen_port = QLineEdit("19000", self)
         self.tcp_prx_listen_port.textChanged.connect(self.update_generated_args)
         tcp_proxy_layout.addWidget(self.tcp_prx_listen_port)
-        
         tcp_proxy_layout.addWidget(QLabel("Target Host:", self))
         self.tcp_prx_target_host = QLineEdit("127.0.0.1", self)
         self.tcp_prx_target_host.textChanged.connect(self.update_generated_args)
         tcp_proxy_layout.addWidget(self.tcp_prx_target_host)
-        
         tcp_proxy_layout.addWidget(QLabel("Target Port:", self))
         self.tcp_prx_target_port = QLineEdit("19085", self)
         self.tcp_prx_target_port.textChanged.connect(self.update_generated_args)
         tcp_proxy_layout.addWidget(self.tcp_prx_target_port)
-        
         self.param_stack.addWidget(tcp_proxy_widget)
 
         # 5. Serial Panel
         serial_widget = QWidget(self)
         serial_layout = QHBoxLayout(serial_widget)
         serial_layout.setContentsMargins(0, 5, 0, 5)
-        
         serial_layout.addWidget(QLabel("Port Path:", self))
         self.ser_port = QLineEdit("/dev/ttyUSB0", self)
         self.ser_port.textChanged.connect(self.update_generated_args)
         serial_layout.addWidget(self.ser_port)
-        
         serial_layout.addWidget(QLabel("Baud Rate:", self))
         self.ser_baud = QComboBox(self)
         self.ser_baud.setEditable(True)
@@ -495,10 +525,92 @@ class MainWindow(QMainWindow):
         self.ser_baud.currentIndexChanged.connect(self.update_generated_args)
         self.ser_baud.editTextChanged.connect(self.update_generated_args)
         serial_layout.addWidget(self.ser_baud)
-        
         self.param_stack.addWidget(serial_widget)
 
-        # Common Row
+        split_config_layout.addWidget(left_widget, 1)
+
+        # Right Widget: Frame Decoder Settings
+        right_widget = QWidget(self)
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        dec_combo_layout = QHBoxLayout()
+        dec_combo_layout.addWidget(QLabel("Decoder:", self))
+        self.decoder_combo = QComboBox(self)
+        self.decoder_combo.addItems(["raw", "fixed", "delimiter", "length-prefix"])
+        self.decoder_combo.currentIndexChanged.connect(self.on_decoder_changed)
+        dec_combo_layout.addWidget(self.decoder_combo)
+        dec_combo_layout.addStretch()
+        right_layout.addLayout(dec_combo_layout)
+
+        # Decoder parameters stack
+        self.decoder_param_stack = QStackedWidget(self)
+        right_layout.addWidget(self.decoder_param_stack)
+
+        # Decoder Stack 1: Raw (Empty)
+        dec_raw_widget = QWidget(self)
+        dec_raw_layout = QHBoxLayout(dec_raw_widget)
+        dec_raw_layout.setContentsMargins(0, 5, 0, 5)
+        dec_raw_layout.addWidget(QLabel("Raw bytes mode - no frame boundary detection", self))
+        dec_raw_layout.addStretch()
+        self.decoder_param_stack.addWidget(dec_raw_widget)
+
+        # Decoder Stack 2: Fixed Size
+        dec_fixed_widget = QWidget(self)
+        dec_fixed_layout = QHBoxLayout(dec_fixed_widget)
+        dec_fixed_layout.setContentsMargins(0, 5, 0, 5)
+        dec_fixed_layout.addWidget(QLabel("Frame Size:", self))
+        self.dec_fixed_size = QSpinBox(self)
+        self.dec_fixed_size.setRange(1, 1000000)
+        self.dec_fixed_size.setValue(16)
+        self.dec_fixed_size.valueChanged.connect(self.update_generated_args)
+        dec_fixed_layout.addWidget(self.dec_fixed_size)
+        dec_fixed_layout.addStretch()
+        self.decoder_param_stack.addWidget(dec_fixed_widget)
+
+        # Decoder Stack 3: Delimiter
+        dec_delim_widget = QWidget(self)
+        dec_delim_layout = QHBoxLayout(dec_delim_widget)
+        dec_delim_layout.setContentsMargins(0, 5, 0, 5)
+        dec_delim_layout.addWidget(QLabel("Delimiter (Hex):", self))
+        self.dec_delim_edit = QLineEdit("0A", self)
+        self.dec_delim_edit.setPlaceholderText("e.g. 0A or 0D0A")
+        self.dec_delim_edit.textChanged.connect(self.update_generated_args)
+        dec_delim_layout.addWidget(self.dec_delim_edit)
+        self.dec_delim_inc_cb = QCheckBox("Include Delimiter", self)
+        self.dec_delim_inc_cb.setChecked(False)
+        self.dec_delim_inc_cb.toggled.connect(self.update_generated_args)
+        dec_delim_layout.addWidget(self.dec_delim_inc_cb)
+        self.decoder_param_stack.addWidget(dec_delim_widget)
+
+        # Decoder Stack 4: Length-Prefix
+        dec_len_widget = QWidget(self)
+        dec_len_layout = QHBoxLayout(dec_len_widget)
+        dec_len_layout.setContentsMargins(0, 5, 0, 5)
+        dec_len_layout.addWidget(QLabel("Length Size:", self))
+        self.dec_len_size_combo = QComboBox(self)
+        self.dec_len_size_combo.addItems(["1", "2", "4"])
+        self.dec_len_size_combo.setCurrentText("2")
+        self.dec_len_size_combo.currentIndexChanged.connect(self.update_generated_args)
+        dec_len_layout.addWidget(self.dec_len_size_combo)
+
+        dec_len_layout.addWidget(QLabel("Endian:", self))
+        self.dec_len_endian_combo = QComboBox(self)
+        self.dec_len_endian_combo.addItems(["big", "little"])
+        self.dec_len_endian_combo.setCurrentText("big")
+        self.dec_len_endian_combo.currentIndexChanged.connect(self.update_generated_args)
+        dec_len_layout.addWidget(self.dec_len_endian_combo)
+
+        self.dec_len_inc_hdr_cb = QCheckBox("Includes Header", self)
+        self.dec_len_inc_hdr_cb.setChecked(False)
+        self.dec_len_inc_hdr_cb.toggled.connect(self.update_generated_args)
+        dec_len_layout.addWidget(self.dec_len_inc_hdr_cb)
+        self.decoder_param_stack.addWidget(dec_len_widget)
+
+        split_config_layout.addWidget(right_widget, 1)
+        conn_layout.addLayout(split_config_layout)
+
+        # Common Row (Log File & Extra Args)
         common_layout = QHBoxLayout()
         common_layout.addWidget(QLabel("Log File:", self))
         self.log_file_edit = QLineEdit("udp.jsonl", self)
@@ -522,7 +634,7 @@ class MainWindow(QMainWindow):
 
         top_control_layout.addWidget(self.conn_group)
 
-        # Action Buttons Row
+        # Row 2: Action Buttons & Status Indicators (Compact 1 Row)
         action_btn_layout = QHBoxLayout()
         self.start_capture_btn = QPushButton("Start Capture", self)
         self.start_capture_btn.setObjectName("start_capture_btn")
@@ -546,27 +658,14 @@ class MainWindow(QMainWindow):
         self.clear_btn = QPushButton("Clear", self)
         self.clear_btn.clicked.connect(self.clear_all)
         action_btn_layout.addWidget(self.clear_btn)
+
+        action_btn_layout.addSpacing(20)
+        self.status_label = QLabel("Status: disconnected", self)
+        action_btn_layout.addWidget(self.status_label)
+        self.mode_label = QLabel("Mode: idle", self)
+        action_btn_layout.addWidget(self.mode_label)
         action_btn_layout.addStretch()
         top_control_layout.addLayout(action_btn_layout)
-
-        # IPC Status Row
-        ipc_layout = QHBoxLayout()
-        ipc_layout.addWidget(QLabel("Socket Path:", self))
-        self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
-        ipc_layout.addWidget(self.socket_path_edit)
-
-        self.connect_btn = QPushButton("Connect", self)
-        self.connect_btn.clicked.connect(self.toggle_connection)
-        ipc_layout.addWidget(self.connect_btn)
-        top_control_layout.addLayout(ipc_layout)
-
-        status_layout = QHBoxLayout()
-        self.status_label = QLabel("Status: disconnected", self)
-        status_layout.addWidget(self.status_label)
-        self.mode_label = QLabel("Mode: idle", self)
-        status_layout.addWidget(self.mode_label)
-        status_layout.addStretch()
-        top_control_layout.addLayout(status_layout)
 
         main_layout.addWidget(top_control_widget)
 
@@ -1114,6 +1213,22 @@ class MainWindow(QMainWindow):
         self.ser_port.setText(self.settings.value("ser_port", "/dev/ttyUSB0"))
         self.ser_baud.setCurrentText(self.settings.value("ser_baud", "115200"))
 
+        # Load Decoder fields
+        dec_idx = int(self.settings.value("decoder_index", 0))
+        self.decoder_combo.setCurrentIndex(dec_idx)
+        self.decoder_param_stack.setCurrentIndex(dec_idx)
+
+        self.dec_fixed_size.setValue(int(self.settings.value("dec_fixed_size", 16)))
+        self.dec_delim_edit.setText(self.settings.value("dec_delim", "0A"))
+        self.dec_delim_inc_cb.setChecked(self.settings.value("dec_delim_inc", "false") == "true")
+        self.dec_len_size_combo.setCurrentText(self.settings.value("dec_len_size", "2"))
+        self.dec_len_endian_combo.setCurrentText(self.settings.value("dec_len_endian", "big"))
+        self.dec_len_inc_hdr_cb.setChecked(self.settings.value("dec_len_inc_hdr", "false") == "true")
+
+        settings_visible = self.settings.value("settings_visible", "true") == "true"
+        self.toggle_settings_btn.setChecked(settings_visible)
+        self.conn_group.setVisible(settings_visible)
+
         # Common fields
         self.log_file_edit.setText(self.settings.value("log_file", "udp.jsonl"))
         self.extra_args_edit.setText(self.settings.value("extra_args", ""))
@@ -1146,6 +1261,16 @@ class MainWindow(QMainWindow):
 
         self.settings.setValue("ser_port", self.ser_port.text().strip())
         self.settings.setValue("ser_baud", self.ser_baud.currentText().strip())
+
+        # Save Decoder fields
+        self.settings.setValue("decoder_index", self.decoder_combo.currentIndex())
+        self.settings.setValue("dec_fixed_size", self.dec_fixed_size.value())
+        self.settings.setValue("dec_delim", self.dec_delim_edit.text().strip())
+        self.settings.setValue("dec_delim_inc", "true" if self.dec_delim_inc_cb.isChecked() else "false")
+        self.settings.setValue("dec_len_size", self.dec_len_size_combo.currentText())
+        self.settings.setValue("dec_len_endian", self.dec_len_endian_combo.currentText())
+        self.settings.setValue("dec_len_inc_hdr", "true" if self.dec_len_inc_hdr_cb.isChecked() else "false")
+        self.settings.setValue("settings_visible", "true" if self.toggle_settings_btn.isChecked() else "false")
 
         self.settings.setValue("log_file", self.log_file_edit.text().strip())
         self.settings.setValue("extra_args", self.extra_args_edit.text().strip())
@@ -1215,6 +1340,24 @@ class MainWindow(QMainWindow):
             if self.ser_baud.currentText().strip():
                 args.extend(["--baudrate", self.ser_baud.currentText().strip()])
 
+        # Frame Decoder options
+        decoder = self.decoder_combo.currentText()
+        if decoder != "raw":
+            args.extend(["--decoder", decoder])
+            if decoder == "fixed":
+                args.extend(["--frame-size", str(self.dec_fixed_size.value())])
+            elif decoder == "delimiter":
+                delim = self.dec_delim_edit.text().strip()
+                if delim:
+                    args.extend(["--delimiter", delim])
+                if self.dec_delim_inc_cb.isChecked():
+                    args.append("--include-delimiter")
+            elif decoder == "length-prefix":
+                args.extend(["--length-size", self.dec_len_size_combo.currentText()])
+                args.extend(["--length-endian", self.dec_len_endian_combo.currentText()])
+                if self.dec_len_inc_hdr_cb.isChecked():
+                    args.append("--length-includes-header")
+
         # Common option: log file
         log_file = self.log_file_edit.text().strip()
         if log_file:
@@ -1227,6 +1370,13 @@ class MainWindow(QMainWindow):
 
         generated_str = " ".join(args)
         self.cli_args_edit.setText(generated_str)
+
+    def on_decoder_changed(self, index: int):
+        self.decoder_param_stack.setCurrentIndex(index)
+        self.update_generated_args()
+
+    def toggle_settings_visibility(self, checked: bool):
+        self.conn_group.setVisible(checked)
 
     def closeEvent(self, event):
         self.save_settings()
