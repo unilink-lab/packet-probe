@@ -399,10 +399,6 @@ class MainWindow(QMainWindow):
         self.stop_capture_btn.clicked.connect(self.stop_capture)
         action_btn_layout.addWidget(self.stop_capture_btn)
 
-        self.open_log_btn = QPushButton("Open Log", self)
-        self.open_log_btn.clicked.connect(self.open_log_file)
-        action_btn_layout.addWidget(self.open_log_btn)
-
         self.pause_btn = QPushButton("Pause", self)
         self.pause_btn.clicked.connect(self.toggle_pause)
         action_btn_layout.addWidget(self.pause_btn)
@@ -416,6 +412,8 @@ class MainWindow(QMainWindow):
         action_btn_layout.addWidget(self.status_label)
         self.mode_label = QLabel("Mode: idle", self)
         action_btn_layout.addWidget(self.mode_label)
+        self.port_label = QLabel("Port: -", self)
+        action_btn_layout.addWidget(self.port_label)
         action_btn_layout.addStretch()
 
         self.toggle_settings_btn = QPushButton("⚙️ Settings", self)
@@ -1376,6 +1374,27 @@ class MainWindow(QMainWindow):
 
         generated_str = " ".join(args)
         self.cli_args_edit.setText(generated_str)
+
+        # Update Port Label dynamically
+        active_port = "-"
+        if mode == "UDP":
+            bind_p = self.udp_bind_port.text().strip()
+            target_p = self.udp_target_port.text().strip()
+            active_port = f"Bind {bind_p}" if bind_p else "-"
+            if target_p:
+                active_port += f" (Target {target_p})"
+        elif mode == "TCP Client":
+            active_port = self.tcp_cli_port.text().strip()
+        elif mode == "TCP Server":
+            active_port = self.tcp_srv_port.text().strip()
+        elif mode == "TCP Proxy":
+            lp = self.tcp_prx_listen_port.text().strip()
+            tp = self.tcp_prx_target_port.text().strip()
+            active_port = f"Proxy {lp} -> {tp}"
+        elif mode == "Serial":
+            active_port = self.ser_port.text().strip()
+            
+        self.port_label.setText(f"Port: {active_port or '-'}")
 
     def on_decoder_changed(self, index: int):
         self.decoder_param_stack.setCurrentIndex(index)
