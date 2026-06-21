@@ -78,3 +78,45 @@ def test_main_window_send_payload_conversion(qtbot):
     # "AA BB CC" clean -> "aabbcc\n"
     assert len(written_data) == 1
     assert written_data[0] == b"aabbcc\n"
+
+
+def test_main_window_settings_and_presets(qtbot):
+    window = MainWindow(settings_org="UnilinkLabTest", settings_app="PacketProbeViewerTest")
+    qtbot.addWidget(window)
+
+    # 1. Verify default preset combo setup and auto-change behavior
+    assert window.preset_combo.count() == 4
+    assert window.preset_combo.itemText(1) == "UDP Loopback (19085)"
+
+    # Change to UDP Loopback preset
+    window.preset_combo.setCurrentIndex(1)
+    assert "udp" in window.cli_args_edit.text()
+    assert "--target-port 19085" in window.cli_args_edit.text()
+
+    # Edit arguments manually -> preset combo should change back to "Custom" (index 0)
+    window.cli_args_edit.setText("udp --custom-flag")
+    assert window.preset_combo.currentIndex() == 0
+
+    # 2. Verify QSettings persistence (save and load)
+    # Modify settings values
+    window.cli_path_edit.setText("/mock/path/packet-probe")
+    window.cli_args_edit.setText("tcp-client --custom")
+    window.preset_combo.setCurrentIndex(0)
+    window.socket_path_edit.setText("/mock/path/socket")
+    window.hex_radio.setChecked(True)
+    window.eol_combo.setCurrentIndex(2) # CR (\r)
+
+    # Save settings
+    window.save_settings()
+
+    # Create a new window instance to load from settings
+    new_window = MainWindow(settings_org="UnilinkLabTest", settings_app="PacketProbeViewerTest")
+    qtbot.addWidget(new_window)
+
+    # Assert new window loaded saved settings
+    assert new_window.cli_path_edit.text() == "/mock/path/packet-probe"
+    assert new_window.cli_args_edit.text() == "tcp-client --custom"
+    assert new_window.preset_combo.currentIndex() == 0
+    assert new_window.socket_path_edit.text() == "/mock/path/socket"
+    assert new_window.hex_radio.isChecked() is True
+    assert new_window.eol_combo.currentIndex() == 2

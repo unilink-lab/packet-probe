@@ -1,10 +1,11 @@
 import os
+from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
     QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton
 )
-from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer
+from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer, QSettings
 from PySide6.QtGui import QFont
 from .ipc_client import IpcClientWorker
 from .event_model import PacketEvent
@@ -14,6 +15,32 @@ from .widgets.event_detail import EventDetailView
 from .jsonl_log_loader import load_packet_probe_jsonl
 from .ipc_path import make_default_ipc_path, resolve_initial_socket_path
 from .capture_process import CaptureProcess
+
+def find_packet_probe_binary() -> str:
+    # 1. Check environment variable
+    env_path = os.environ.get("PACKET_PROBE_CLI")
+    if env_path:
+        return env_path
+    
+    # 2. Check workspace build directory relative to this file
+    try:
+        current_dir = Path(__file__).resolve().parent
+        # Go up to workspace root (viewer/packet_probe_viewer/.. -> packet-probe/)
+        workspace_root = current_dir.parents[1]
+        
+        # Look in build/
+        build_bin = workspace_root / "build" / "packet-probe"
+        if build_bin.exists() and os.access(build_bin, os.X_OK):
+            return str(build_bin)
+            
+        # Also look in build/apps/packet-probe-cli/packet-probe
+        build_bin_alt = workspace_root / "build" / "apps" / "packet-probe-cli" / "packet-probe"
+        if build_bin_alt.exists() and os.access(build_bin_alt, os.X_OK):
+            return str(build_bin_alt)
+    except Exception:
+        pass
+        
+    return "packet-probe"
 
 def format_metadata_message(metadata: dict | None) -> str:
     if not metadata:
@@ -25,7 +52,7 @@ def format_metadata_message(metadata: dict | None) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, initial_socket_path: str = "/tmp/packet-probe.sock", parent=None):
+    def __init__(self, initial_socket_path: str = "/tmp/packet-probe.sock", settings_org: str = "UnilinkLab", settings_app: str = "PacketProbeViewer", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Packet Probe Viewer")
         self.resize(950, 800)  # Slightly taller layout for process logs
@@ -44,6 +71,8 @@ class MainWindow(QMainWindow):
         self.pending_events: list[PacketEvent] = []
 
         self.setup_ui()
+        self.settings = QSettings(settings_org, settings_app)
+        self.load_settings()
         self.set_mode("idle")
 
         # Connect capture process signals
@@ -67,19 +96,30 @@ class MainWindow(QMainWindow):
         # CLI Path Row
         path_layout = QHBoxLayout()
         path_layout.addWidget(QLabel("CLI Path:", self))
-        default_cli = os.environ.get("PACKET_PROBE_CLI", "packet-probe")
-        self.cli_path_edit = QLineEdit(default_cli, self)
+        self.cli_path_edit = QLineEdit(self)
         path_layout.addWidget(self.cli_path_edit)
         self.browse_cli_btn = QPushButton("Browse", self)
         self.browse_cli_btn.clicked.connect(self.browse_cli_path)
         path_layout.addWidget(self.browse_cli_btn)
         top_control_layout.addLayout(path_layout)
 
-        # Args Row
+        # Args & Presets Row
         args_layout = QHBoxLayout()
         args_layout.addWidget(QLabel("Args:", self))
-        self.cli_args_edit = QLineEdit("udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl", self)
+        self.cli_args_edit = QLineEdit(self)
+        self.cli_args_edit.textChanged.connect(self.on_args_changed)
         args_layout.addWidget(self.cli_args_edit)
+
+        args_layout.addWidget(QLabel("Presets:", self))
+        self.preset_combo = QComboBox(self)
+        self.preset_combo.addItems([
+            "Custom",
+            "UDP Loopback (19085)",
+            "TCP Client Loopback (19085)",
+            "TCP Server Loopback (19085)"
+        ])
+        self.preset_combo.currentIndexChanged.connect(self.on_preset_changed)
+        args_layout.addWidget(self.preset_combo)
         top_control_layout.addLayout(args_layout)
 
         # Action Buttons Row
@@ -626,7 +666,57 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to send data: {exc}")
 
+    def load_settings(self):
+        default_cli = find_packet_probe_binary()
+        cli_path = self.settings.value("cli_path", default_cli)
+        self.cli_path_edit.setText(cli_path)
+
+        default_args = "udp --bind-port 19000 --target-host 127.0.0.1 --target-port 19085 --log udp.jsonl"
+        cli_args = self.settings.value("cli_args", default_args)
+        self.cli_args_edit.setText(cli_args)
+
+        preset_idx = int(self.settings.value("preset_index", 1))  # Default to UDP preset
+        self.preset_combo.setCurrentIndex(preset_idx)
+        if preset_idx == 0:
+            self.cli_args_edit.setText(cli_args)
+
+        socket_path = self.settings.value("socket_path", self.initial_socket_path)
+        self.socket_path_edit.setText(socket_path)
+
+        send_in_hex = self.settings.value("send_in_hex", "false") == "true"
+        if send_in_hex:
+            self.hex_radio.setChecked(True)
+        else:
+            self.text_radio.setChecked(True)
+
+        eol_index = int(self.settings.value("eol_index", 0))
+        self.eol_combo.setCurrentIndex(eol_index)
+
+    def save_settings(self):
+        self.settings.setValue("cli_path", self.cli_path_edit.text().strip())
+        self.settings.setValue("cli_args", self.cli_args_edit.text().strip())
+        self.settings.setValue("preset_index", self.preset_combo.currentIndex())
+        self.settings.setValue("socket_path", self.socket_path_edit.text().strip())
+        self.settings.setValue("send_in_hex", "true" if self.hex_radio.isChecked() else "false")
+        self.settings.setValue("eol_index", self.eol_combo.currentIndex())
+
+    def on_preset_changed(self, index: int):
+        self.cli_args_edit.blockSignals(True)
+        if index == 1:
+            self.cli_args_edit.setText("udp --bind-port 19000 --target-host 127.0.0.1 --target-port 19085 --log udp.jsonl")
+        elif index == 2:
+            self.cli_args_edit.setText("tcp-client --host 127.0.0.1 --port 19085 --log tcp_client.jsonl")
+        elif index == 3:
+            self.cli_args_edit.setText("tcp-server --bind-host 127.0.0.1 --bind-port 19085 --log tcp_server.jsonl")
+        self.cli_args_edit.blockSignals(False)
+
+    def on_args_changed(self):
+        self.preset_combo.blockSignals(True)
+        self.preset_combo.setCurrentIndex(0)
+        self.preset_combo.blockSignals(False)
+
     def closeEvent(self, event):
+        self.save_settings()
         self.stop_capture()
         self.disconnect_socket()
         event.accept()
