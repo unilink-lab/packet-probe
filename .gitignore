@@ -13,3 +13,8 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# agent-rules (local only)
+AGENTS.md
+CLAUDE.md
+GEMINI.md
