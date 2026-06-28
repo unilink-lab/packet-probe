@@ -41,8 +41,8 @@ struct TcpProxyCaptureSession::Impl {
   LatencyTracker latency_tracker;
 };
 
-TcpProxyCaptureSession::TcpProxyCaptureSession(TcpProxyConfig config, EventCallback on_event)
-    : config_(std::move(config)), on_event_(std::move(on_event)), impl_(std::make_unique<Impl>()) {}
+TcpProxyCaptureSession::TcpProxyCaptureSession(TcpProxyConfig config, EventCallback on_event, SharedSequenceAllocator seq_alloc)
+    : config_(std::move(config)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {}
 
 TcpProxyCaptureSession::~TcpProxyCaptureSession() { stop(); }
 
@@ -227,7 +227,7 @@ PacketEvent TcpProxyCaptureSession::make_event(Direction direction, EventType ty
                                                std::string source_endpoint, std::string destination_endpoint,
                                                std::string summary) {
   PacketEvent event;
-  event.sequence = next_sequence_.fetch_add(1);
+  event.sequence = seq_alloc_->next();
   event.timestamp_ns = now_ns();
   event.session_id = config_.session_id;
   event.transport = "tcp";
@@ -244,7 +244,7 @@ PacketEvent TcpProxyCaptureSession::make_latency_event(PacketEvent const& respon
                                                        std::int64_t latency_ns, std::size_t request_size,
                                                        std::size_t response_size) {
   PacketEvent event;
-  event.sequence = next_sequence_.fetch_add(1);
+  event.sequence = seq_alloc_->next();
   event.timestamp_ns = response.timestamp_ns;
   event.session_id = config_.session_id;
   event.transport = "tcp";

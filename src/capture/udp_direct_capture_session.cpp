@@ -24,8 +24,8 @@ struct UdpDirectCaptureSession::Impl {
   std::unique_ptr<unilink::UdpClient> client;
 };
 
-UdpDirectCaptureSession::UdpDirectCaptureSession(UdpDirectCaptureOptions options, EventCallback on_event)
-    : options_(std::move(options)), on_event_(std::move(on_event)), impl_(std::make_unique<Impl>()) {}
+UdpDirectCaptureSession::UdpDirectCaptureSession(UdpDirectCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
+    : options_(std::move(options)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {}
 
 UdpDirectCaptureSession::~UdpDirectCaptureSession() { stop(); }
 
@@ -109,7 +109,7 @@ PacketEvent UdpDirectCaptureSession::make_event(Direction direction, EventType t
                                                 std::string source_endpoint, std::string destination_endpoint,
                                                 std::string summary) {
   PacketEvent event;
-  event.sequence = next_sequence_.fetch_add(1);
+  event.sequence = seq_alloc_->next();
   event.timestamp_ns = now_ns();
   event.session_id = options_.session_id;
   event.transport = "udp";

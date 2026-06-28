@@ -12,8 +12,8 @@ struct TcpDirectCaptureSession::Impl {
   std::unique_ptr<unilink::TcpClient> client;
 };
 
-TcpDirectCaptureSession::TcpDirectCaptureSession(TcpDirectCaptureOptions options, EventCallback on_event)
-    : options_(std::move(options)), on_event_(std::move(on_event)), impl_(std::make_unique<Impl>()) {}
+TcpDirectCaptureSession::TcpDirectCaptureSession(TcpDirectCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
+    : options_(std::move(options)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {}
 
 TcpDirectCaptureSession::~TcpDirectCaptureSession() { stop(); }
 
@@ -101,7 +101,7 @@ PacketEvent TcpDirectCaptureSession::make_event(Direction direction, EventType t
                                                 std::string source_endpoint, std::string destination_endpoint,
                                                 std::string summary) {
   PacketEvent event;
-  event.sequence = next_sequence_.fetch_add(1);
+  event.sequence = seq_alloc_->next();
   event.timestamp_ns = now_ns();
   event.session_id = options_.session_id;
   event.transport = "tcp";

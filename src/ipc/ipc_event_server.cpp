@@ -2,9 +2,11 @@
 
 #include "packet_probe/core/jsonl_serializer.hpp"
 #include "unilink/unilink.hpp"
+#include "unilink/framer/line_framer.hpp"
 
 #include <atomic>
 #include <filesystem>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
@@ -16,6 +18,8 @@ struct IpcEventServer::Impl {
   IpcServerOptions options;
   std::unique_ptr<unilink::UdsServer> server;
   std::atomic<bool> is_running{false};
+  CommandHandler command_handler;
+  std::mutex command_handler_mutex;
 
   void start() {
     if (options.socket_path.empty()) {
@@ -46,6 +50,11 @@ struct IpcEventServer::Impl {
     server->max_clients(16);
     server->auto_start(false);
 
+    // Enable line framing so on_message delivers complete newline-terminated commands
+    server->framer([]() {
+      return std::make_unique<unilink::framer::LineFramer>("\n", false, 65536);
+    });
+
     server->on_connect([this](unilink::ConnectionContext const& ctx) {
       if (server) {
         auto metadata = serialize_metadata_jsonl() + '\n';
@@ -55,6 +64,13 @@ struct IpcEventServer::Impl {
 
     server->on_error([this](unilink::ErrorContext const& ctx) {
       // Do not stop the whole IPC server for a single client error.
+    });
+
+    server->on_message([this](unilink::MessageContext const& ctx) {
+      std::lock_guard<std::mutex> lock(command_handler_mutex);
+      if (command_handler) {
+        command_handler(ctx.data());
+      }
     });
 
     auto started = server->start_sync();
@@ -118,6 +134,11 @@ void IpcEventServer::broadcast(PacketEvent const& event) {
     impl_->broadcast(event);
   } catch (...) {
   }
+}
+
+void IpcEventServer::set_command_handler(CommandHandler handler) {
+  std::lock_guard<std::mutex> lock(impl_->command_handler_mutex);
+  impl_->command_handler = std::move(handler);
 }
 
 }  // namespace packet_probe

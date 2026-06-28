@@ -74,7 +74,8 @@ std::unique_ptr<IpcEventServer> make_ipc_server(CliOptions const& options) {
   return server;
 }
 
-EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server) {
+EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server,
+                            SharedSequenceAllocator seq_alloc) {
   (void)create_frame_decoder(options.decoder_config);
   auto const hex_raw = options.hex_raw;
   auto const hex_frame = options.hex_frame;
@@ -85,7 +86,7 @@ EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, 
       ipc_server->broadcast(event);
     }
     print_event(event, hex_raw, hex_frame);
-  });
+  }, std::move(seq_alloc));
 }
 
 }  // namespace packet_probe::cli

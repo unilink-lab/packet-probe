@@ -4,6 +4,7 @@
 
 #include "core/event_pipeline.hpp"
 #include "decoder/frame_decoder_factory.hpp"
+#include "packet_probe/core/sequence_allocator.hpp"
 
 int main() {
   packet_probe::PacketEvent raw;
@@ -24,7 +25,8 @@ int main() {
 
   std::vector<packet_probe::PacketEvent> events;
   packet_probe::EventPipeline pipeline(packet_probe::make_frame_decoder_factory(fixed_config),
-                                       [&](packet_probe::PacketEvent const& event) { events.push_back(event); });
+                                       [&](packet_probe::PacketEvent const& event) { events.push_back(event); },
+                                       packet_probe::make_sequence_allocator());
 
   pipeline.consume(raw);
   assert(events.size() == 3);
@@ -62,7 +64,8 @@ int main() {
   packet_probe::EventPipeline error_pipeline(packet_probe::make_frame_decoder_factory(error_config),
                                              [&](packet_probe::PacketEvent const& event) {
                                                error_events.push_back(event);
-                                             });
+                                             },
+                                             packet_probe::make_sequence_allocator());
 
   auto invalid = raw;
   invalid.sequence = 9;

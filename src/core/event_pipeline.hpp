@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "packet_probe/core/sequence_allocator.hpp"
 #include "packet_probe/decoder/frame_decoder.hpp"
 #include "packet_probe/core/packet_event.hpp"
 
@@ -17,7 +18,7 @@ class EventPipeline {
   using DecoderFactory = std::function<std::unique_ptr<FrameDecoder>()>;
   using EventSink = std::function<void(PacketEvent const&)>;
 
-  EventPipeline(DecoderFactory decoder_factory, EventSink sink);
+  EventPipeline(DecoderFactory decoder_factory, EventSink sink, SharedSequenceAllocator seq_alloc);
 
   void consume(PacketEvent const& event);
 
@@ -25,13 +26,9 @@ class EventPipeline {
   std::string stream_key(PacketEvent const& event) const;
   PacketEvent make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload, std::vector<std::uint64_t> const& parent_seqs);
 
-  // Derived events currently use a high range to avoid collisions with
-  // capture-session raw event sequences until a shared allocator is introduced.
-  static constexpr std::uint64_t kDerivedSequenceStart = 1000000000000ULL;
-
   DecoderFactory decoder_factory_;
   EventSink sink_;
-  std::uint64_t next_derived_sequence_ = kDerivedSequenceStart;
+  SharedSequenceAllocator seq_alloc_;
   std::unordered_map<std::string, std::unique_ptr<FrameDecoder>> decoders_;
   std::unordered_map<std::string, std::vector<std::uint64_t>> stream_raw_sequences_;
   std::mutex mutex_;

@@ -11,6 +11,7 @@
 #include "capture/tcp_direct_capture_session.hpp"
 #include "capture/tcp_server_capture_session.hpp"
 #include "packet_probe/core/packet_event.hpp"
+#include "packet_probe/core/sequence_allocator.hpp"
 
 #define TEST_ASSERT(cond, msg) \
   if (!(cond)) { \
@@ -57,7 +58,8 @@ int main() {
                   << " payload_size=" << event.payload.size()
                   << " summary=\"" << event.summary << "\"" << std::endl;
         server_events.push_back(event);
-      });
+      },
+      packet_probe::make_sequence_allocator());
 
   server_session.start();
   TEST_ASSERT(!server_session.stopped(), "Server session should be running after start()");
@@ -78,7 +80,8 @@ int main() {
                   << " payload_size=" << event.payload.size()
                   << " summary=\"" << event.summary << "\"" << std::endl;
         client_events.push_back(event);
-      });
+      },
+      packet_probe::make_sequence_allocator());
 
   client_session.start();
   TEST_ASSERT(!client_session.stopped(), "Client session should be running after start()");

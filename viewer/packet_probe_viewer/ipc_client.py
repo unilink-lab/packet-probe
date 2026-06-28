@@ -101,6 +101,14 @@ class IpcClientWorker(QThread):
         except Exception as exc:
             self.error_occurred.emit(f"Message handling error: {exc}")
 
+    def send_command(self, cmd: dict) -> None:
+        client = self._client
+        if client is not None and self._running:
+            try:
+                client.send_line(json.dumps(cmd))
+            except Exception as exc:
+                self.error_occurred.emit(f"Failed to send IPC command: {exc}")
+
     def stop(self):
         self._running = False
 

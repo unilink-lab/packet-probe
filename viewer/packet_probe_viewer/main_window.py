@@ -526,6 +526,7 @@ class MainWindow(QMainWindow):
             self.socket_path_edit.setEnabled(False)
             self.clear_all()
             self.message_label.setText("Live mode started")
+            self.send_group.setEnabled(True)
             if self.capture_process.is_running():
                 self.update_status("Status: capture running")
                 self.set_mode("launcher")
@@ -897,8 +898,11 @@ class MainWindow(QMainWindow):
             self.send_input.setPlaceholderText("Type message to send...")
 
     def send_data(self):
-        if not self.capture_process.is_running():
-            QMessageBox.warning(self, "Warning", "Cannot send data: CLI capture process is not running.")
+        can_send_via_ipc = self.worker is not None and self.worker.isRunning()
+        can_send_via_stdin = self.capture_process.is_running()
+
+        if not can_send_via_ipc and not can_send_via_stdin:
+            QMessageBox.warning(self, "Warning", "Cannot send data: no active IPC connection or CLI process.")
             return
 
         text = self.send_input.text().strip()
@@ -907,6 +911,34 @@ class MainWindow(QMainWindow):
 
         is_gui_hex = self.hex_radio.isChecked()
         is_cli_hex = self.active_send_mode == "hex"
+
+        if can_send_via_ipc:
+            # Prefer IPC channel: resolve hex bytes and send as {"command":"send","payload_hex":"..."}
+            if is_gui_hex:
+                clean_hex = re.sub(r'(0x|0X|[\s:\-])', '', text).lower()
+                if not clean_hex or not all(c in '0123456789abcdefABCDEF' for c in clean_hex) or len(clean_hex) % 2 != 0:
+                    QMessageBox.warning(self, "Invalid Hex",
+                                        "Please enter a valid hex string (e.g. AA BB CC or AABBCC).\n"
+                                        "Note: Each byte must have two hex digits.")
+                    return
+                payload_hex = clean_hex
+            else:
+                eol_idx = self.eol_combo.currentIndex()
+                raw = text
+                if eol_idx == 1:
+                    raw += "\n"
+                elif eol_idx == 2:
+                    raw += "\r"
+                elif eol_idx == 3:
+                    raw += "\r\n"
+                try:
+                    payload_hex = raw.encode("utf-8").hex()
+                except Exception as exc:
+                    QMessageBox.critical(self, "Error", f"Failed to encode text: {exc}")
+                    return
+            self.worker.send_command({"type": "command", "command": "send", "payload_hex": payload_hex})
+            self.send_input.clear()
+            return
 
         if is_cli_hex:
             if is_gui_hex:

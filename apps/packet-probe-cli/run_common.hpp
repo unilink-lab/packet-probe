@@ -24,6 +24,7 @@
 #include "ipc/ipc_event_server.hpp"
 #include "recorder/jsonl_recorder.hpp"
 #include "core/send_input_parser.hpp"
+#include "packet_probe/core/sequence_allocator.hpp"
 
 namespace packet_probe::cli {
 
@@ -34,7 +35,8 @@ std::vector<std::uint8_t> parse_send_line(std::string const& line, SendInputOpti
 void print_event(PacketEvent const& event, bool hex_raw_enabled, bool hex_frame_enabled);
 std::unique_ptr<JsonlRecorder> make_recorder(CliOptions const& options);
 std::unique_ptr<IpcEventServer> make_ipc_server(CliOptions const& options);
-EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server);
+EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server,
+                            SharedSequenceAllocator seq_alloc);
 
 template <typename Session>
 int run_sender_session(Session& session, SendInputOptions const& send_options, StopRequested const& stop_requested) {
@@ -64,6 +66,41 @@ int run_sender_session(Session& session, SendInputOptions const& send_options, S
     session.stop();
   }
   return 0;
+}
+
+namespace {
+
+// Extract a string field value from a minimal JSON object.
+// Only handles simple {"key":"value"} patterns without nesting or escaping.
+inline std::string extract_json_string_field(std::string_view line, std::string_view key) {
+  std::string pattern;
+  pattern.reserve(key.size() + 4);
+  pattern += '"';
+  pattern += key;
+  pattern += "\":\"";
+  auto pos = line.find(pattern);
+  if (pos == std::string_view::npos) return {};
+  pos += pattern.size();
+  auto end = line.find('"', pos);
+  if (end == std::string_view::npos) return {};
+  return std::string(line.substr(pos, end - pos));
+}
+
+}  // namespace
+
+// Registers an IPC command handler that routes {"command":"send","payload_hex":"..."} to session.send().
+template <typename Session>
+void install_ipc_send_handler(IpcEventServer* ipc_server, Session& session) {
+  if (!ipc_server) return;
+  ipc_server->set_command_handler([&session](std::string_view line) {
+    if (extract_json_string_field(line, "command") != "send") return;
+    auto hex = extract_json_string_field(line, "payload_hex");
+    if (hex.empty()) return;
+    try {
+      session.send(parse_hex_payload(hex));
+    } catch (...) {
+    }
+  });
 }
 
 }  // namespace packet_probe::cli

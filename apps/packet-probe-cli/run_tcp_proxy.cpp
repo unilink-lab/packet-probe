@@ -8,9 +8,10 @@
 namespace packet_probe::cli {
 
 int run_tcp_proxy(CliOptions const& options, StopRequested const& stop_requested) {
+  auto seq_alloc = make_sequence_allocator();
   auto recorder = make_recorder(options);
   auto ipc_server = make_ipc_server(options);
-  auto pipeline = make_pipeline(options, *recorder, ipc_server.get());
+  auto pipeline = make_pipeline(options, *recorder, ipc_server.get(), seq_alloc);
 
   TcpProxyConfig config;
   config.listen_host = options.listen_host;
@@ -19,7 +20,7 @@ int run_tcp_proxy(CliOptions const& options, StopRequested const& stop_requested
   config.target_port = options.target_port;
   config.latency_enabled = options.latency;
 
-  TcpProxyCaptureSession session(config, [&](PacketEvent const& event) { pipeline.consume(event); });
+  TcpProxyCaptureSession session(config, [&](PacketEvent const& event) { pipeline.consume(event); }, seq_alloc);
 
   session.start();
   while (!stop_requested() && !session.stopped()) {

@@ -8,6 +8,7 @@
 
 #include "capture/capture_session.hpp"
 #include "packet_probe/core/packet_event.hpp"
+#include "packet_probe/core/sequence_allocator.hpp"
 
 namespace packet_probe {
 
@@ -26,7 +27,7 @@ class TcpProxyCaptureSession : public CaptureSession {
  public:
   using EventCallback = std::function<void(PacketEvent const&)>;
 
-  TcpProxyCaptureSession(TcpProxyConfig config, EventCallback on_event);
+  TcpProxyCaptureSession(TcpProxyConfig config, EventCallback on_event, SharedSequenceAllocator seq_alloc);
   ~TcpProxyCaptureSession() override;
 
   TcpProxyCaptureSession(TcpProxyCaptureSession const&) = delete;
@@ -48,7 +49,7 @@ class TcpProxyCaptureSession : public CaptureSession {
 
   TcpProxyConfig config_;
   EventCallback on_event_;
-  std::atomic<std::uint64_t> next_sequence_{1};
+  SharedSequenceAllocator seq_alloc_;
   std::atomic<bool> stopped_{true};
   std::unique_ptr<Impl> impl_;
 };

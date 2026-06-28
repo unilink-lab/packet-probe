@@ -7,8 +7,8 @@
 
 namespace packet_probe {
 
-EventPipeline::EventPipeline(DecoderFactory decoder_factory, EventSink sink)
-    : decoder_factory_(std::move(decoder_factory)), sink_(std::move(sink)) {}
+EventPipeline::EventPipeline(DecoderFactory decoder_factory, EventSink sink, SharedSequenceAllocator seq_alloc)
+    : decoder_factory_(std::move(decoder_factory)), sink_(std::move(sink)), seq_alloc_(std::move(seq_alloc)) {}
 
 void EventPipeline::consume(PacketEvent const& event) {
   if (!sink_) {
@@ -47,7 +47,7 @@ void EventPipeline::consume(PacketEvent const& event) {
       }
     } catch (std::exception const& ex) {
       auto error = event;
-      error.sequence = next_derived_sequence_++;
+      error.sequence = seq_alloc_->next();
       error.parent_sequence = event.sequence;
       error.parent_sequences = seqs;
       error.type = EventType::Error;
@@ -71,7 +71,7 @@ std::string EventPipeline::stream_key(PacketEvent const& event) const {
 
 PacketEvent EventPipeline::make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload, std::vector<std::uint64_t> const& parent_seqs) {
   PacketEvent frame = parent;
-  frame.sequence = next_derived_sequence_++;
+  frame.sequence = seq_alloc_->next();
   frame.parent_sequence = parent.sequence;
   frame.parent_sequences = parent_seqs;
   frame.type = EventType::Frame;

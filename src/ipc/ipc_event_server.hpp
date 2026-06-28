@@ -1,7 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "packet_probe/core/packet_event.hpp"
 
@@ -16,6 +18,8 @@ struct IpcServerOptions {
 
 class IpcEventServer {
  public:
+  using CommandHandler = std::function<void(std::string_view json_line)>;
+
   explicit IpcEventServer(IpcServerOptions options);
   ~IpcEventServer();
 
@@ -28,6 +32,8 @@ class IpcEventServer {
 
   void broadcast_metadata();
   void broadcast(PacketEvent const& event);
+
+  void set_command_handler(CommandHandler handler);
 
  private:
   struct Impl;
