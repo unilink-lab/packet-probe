@@ -1,3 +1,4 @@
+from collections import deque
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 from .event_model import PacketEvent, format_time_ns
@@ -7,7 +8,7 @@ class PacketTableModel(QAbstractTableModel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.events: list[PacketEvent] = []
+        self.events: deque[PacketEvent] = deque()
         self.parent_child_counts: dict[int, int] = {}
         self.headers = ["Seq", "Parent Seq(s)", "Time", "Direction", "Type", "Transport", "Size", "Summary"]
 
@@ -67,7 +68,7 @@ class PacketTableModel(QAbstractTableModel):
     def append_event(self, event: PacketEvent):
         if len(self.events) >= self.MAX_EVENTS:
             self.beginRemoveRows(QModelIndex(), 0, 0)
-            self.events.pop(0)
+            self.events.popleft()
             self.endRemoveRows()
 
         # Option 2: Format derived events as virtual sequences in GUI (e.g. 66.1)
@@ -88,7 +89,7 @@ class PacketTableModel(QAbstractTableModel):
         self.beginResetModel()
         if len(events) > self.MAX_EVENTS:
             events = events[-self.MAX_EVENTS:]
-        
+
         self.parent_child_counts.clear()
         for event in events:
             p = event.parent_seqs[0] if event.parent_seqs else event.parent_seq
@@ -98,12 +99,12 @@ class PacketTableModel(QAbstractTableModel):
             else:
                 event._display_seq = str(event.seq)
 
-        self.events = list(events)
+        self.events = deque(events)
         self.endResetModel()
 
     def clear(self):
         self.beginResetModel()
-        self.events.clear()
+        self.events = deque()
         self.parent_child_counts.clear()
         self.endResetModel()
 

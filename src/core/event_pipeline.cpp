@@ -24,7 +24,11 @@ void EventPipeline::consume(PacketEvent const& event) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto const key = stream_key(event);
-    auto& decoder = decoder_for(event);
+    auto found = decoders_.find(key);
+    if (found == decoders_.end()) {
+      found = decoders_.emplace(key, decoder_factory_()).first;
+    }
+    auto& decoder = *found->second;
 
     // Track raw sequences contributing to the current decoding transaction (Option A)
     auto& seqs = stream_raw_sequences_[key];
@@ -64,14 +68,6 @@ std::string EventPipeline::stream_key(PacketEvent const& event) const {
          "|" + event.destination_endpoint;
 }
 
-FrameDecoder& EventPipeline::decoder_for(PacketEvent const& event) {
-  auto key = stream_key(event);
-  auto found = decoders_.find(key);
-  if (found == decoders_.end()) {
-    found = decoders_.emplace(std::move(key), decoder_factory_()).first;
-  }
-  return *found->second;
-}
 
 PacketEvent EventPipeline::make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload, std::vector<std::uint64_t> const& parent_seqs) {
   PacketEvent frame = parent;

@@ -23,7 +23,6 @@ class EventPipeline {
 
  private:
   std::string stream_key(PacketEvent const& event) const;
-  FrameDecoder& decoder_for(PacketEvent const& event);
   PacketEvent make_frame_event(PacketEvent const& parent, std::vector<std::uint8_t> payload, std::vector<std::uint64_t> const& parent_seqs);
 
   // Derived events currently use a high range to avoid collisions with
