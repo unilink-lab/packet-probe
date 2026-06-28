@@ -1,9 +1,9 @@
 # IPC Protocol
 
-Packet Probe implements a read-only IPC event stream for future viewer
-integration. The IPC stream lets a viewer subscribe to the same event JSONL used
-by file recording without mixing UI code into capture, recorder, or decoder
-libraries.
+Packet Probe implements a bidirectional IPC channel between the CLI and the
+viewer. The IPC stream lets a viewer subscribe to the same event JSONL used by
+file recording and send commands back to the CLI — without mixing UI code into
+capture, recorder, or decoder libraries.
 
 ## UDS Capture Mode vs UDS IPC
 
@@ -45,7 +45,7 @@ JSONL to disk and broadcast the same events to IPC clients at the same time.
 
 ## Protocol
 
-The current protocol is JSONL over a stream socket.
+The protocol is JSONL over a stream socket. Both directions use newline-delimited JSON.
 
 - Message boundary: newline-delimited JSON
 - Encoding: UTF-8 JSON lines
@@ -61,7 +61,7 @@ Each client receives a metadata line immediately after connecting:
 After metadata, each captured event is sent as one JSON line using the same event
 schema as JSONL log files.
 
-Core to viewer messages:
+### Core to viewer messages
 
 - metadata
 - raw packet event
@@ -70,9 +70,19 @@ Core to viewer messages:
 - error event
 - state event
 
-Viewer to core messages:
+### Viewer to core messages
 
-- none in the current read-only IPC protocol
+#### send
+
+Sends a payload to the connected device. Supported in tcp-client, tcp-server, serial, and udp modes. Not supported in tcp-proxy mode.
+
+```json
+{"type":"command","command":"send","payload_hex":"AABBCC"}
+```
+
+- `payload_hex`: hex-encoded bytes to send (no spaces, separators, or `0x` prefix)
+- The CLI decodes the hex payload and calls the session's `send()` method
+- If decoding fails or the session has no send method, the command is silently ignored
 
 ## Multi-Client Behavior
 
@@ -112,12 +122,11 @@ When Packet Probe stops:
 - connected client sockets are closed
 - the socket path is unlinked
 
-## Read-Only Viewer Policy
+## Viewer Policy
 
-The first viewer integration is read-only. Viewer command send, capture
-start/stop control, filter subscription, snapshot request, and mutation APIs are
-out of scope for the current read-only IPC protocol. The CLI or daemon starts capture, and the
-viewer subscribes to the event stream.
+The CLI starts capture. The viewer subscribes to events and can send commands
+back over the same socket. Capture start/stop control, filter subscription,
+snapshot requests, and mutation APIs remain out of scope.
 
 ## Reconnect Policy
 
@@ -126,8 +135,7 @@ reconnect, the core sends a fresh metadata line before new event lines.
 
 ## Future Extensions
 
-- viewer command channel
-- capture start/stop
+- capture start/stop control
 - filter subscription
 - snapshot request
 - log replay stream

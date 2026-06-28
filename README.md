@@ -31,13 +31,12 @@ written as JSONL for later viewer support.
 ## Current Limitations
 
 - No UDS capture mode yet
-- Viewer is read-only.
-- Viewer command send and capture control are not implemented yet.
 - No protocol-specific message decoder yet
 - No external decoder plugin system yet
 - No replay support yet
 - TCP server mode accepts one client connection per process run
 - UDS IPC currently uses synchronous broadcast
+- Viewer capture start/stop control not implemented yet
 
 ## Build
 
@@ -259,15 +258,16 @@ CLI helpers are internal implementation details.
 
 ## Viewer
 
-Packet Probe includes an optional PySide6-based read-only viewer under `viewer/`.
+Packet Probe includes an optional PySide6-based viewer under `viewer/`.
 
 The viewer connects to Packet Probe's UDS IPC event stream and displays packet
 events in a table with hex and JSON detail views. The viewer can either connect
 to an existing IPC socket or launch `packet-probe` directly and connect to the
 generated IPC socket.
 
-Packet Probe IPC is implemented through the unilink UDS transport. The viewer is
-planned to use the unilink-python UDS client support for the same IPC stream.
+The IPC channel is bidirectional. The viewer can send a `send` command to
+transmit a hex payload to the connected device (tcp-client, tcp-server, serial,
+udp modes). Packet Probe IPC is implemented through the unilink UDS transport.
 
 See [viewer/README.md](viewer/README.md) for viewer installation and usage.
 

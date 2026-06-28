@@ -68,6 +68,43 @@ python -m pip install -e .
 - Connect to a running Packet Probe IPC socket, click Disconnect, then Connect again. The viewer should reconnect without restarting.
 - Close the viewer window while connected. The window should close without hanging.
 
+## Send command validation
+
+### Steps
+
+1. Start Packet Probe in tcp-client mode with IPC:
+
+   ```sh
+   packet-probe tcp-client \
+     --host 127.0.0.1 \
+     --port 19100 \
+     --ipc /tmp/packet-probe.sock \
+     --log tcp.jsonl
+   ```
+
+   (Start a TCP echo server on port 19100 first, e.g. `ncat -l 19100 -k`.)
+
+2. Start the viewer:
+
+   ```sh
+   packet-probe-viewer --socket /tmp/packet-probe.sock
+   ```
+
+3. Enter a hex payload in the Send Message panel, e.g. `AABBCC`.
+4. Click `Send`.
+
+### Expected results
+
+* The CLI receives the hex payload and sends it to the connected TCP server.
+* A `app_to_device` raw_bytes event appears in the viewer event table.
+* The Hex tab and JSON tab update when the event row is selected.
+* No errors appear in the Process Log.
+
+### Additional checks
+
+- Try sending from an unsupported mode (tcp-proxy). The send panel should be disabled or the command silently ignored.
+- Send while disconnected from IPC. The viewer should show no error and not hang.
+
 ## Launcher validation
 
 ### Steps

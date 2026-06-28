@@ -1,9 +1,10 @@
 # Packet Probe Viewer
 
-Packet Probe Viewer is an optional read-only viewer for Packet Probe event streams.
+Packet Probe Viewer is an optional viewer for Packet Probe event streams.
 
 The viewer subscribes to Packet Probe's UDS IPC stream and displays
-JSONL events in a table, hex view, and detail panel.
+JSONL events in a table, hex view, and detail panel. It can also send commands
+back to the CLI over the same socket.
 
 ## Install
 
@@ -87,11 +88,16 @@ Packet Probe Viewer follows a compact desktop communication-tool layout.
 - Center view: live or offline event table
 - Bottom tabs: Hex, JSON detail, and Process Log
 
+## Send Command
+
+When connected via IPC, the Send Message panel in the viewer sends a hex payload
+to the connected device. This uses the IPC `send` command and works in tcp-client,
+tcp-server, serial, and udp modes. TCP proxy mode does not support send.
+
 ## Limitations
 
-- read-only viewer
-- no command send
 - no replay
 - Unix Domain Socket IPC only for now
 - viewer currently keeps events in memory
 - very large captures should be recorded as JSONL and analyzed separately
+- capture start/stop control not implemented yet

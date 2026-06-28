@@ -9,14 +9,16 @@ Packet Probe is organized around a transport-independent event model.
       |
 [Packet Probe Core]
       |
- UDS IPC event stream
+ UDS IPC  (events ↓  commands ↑)
       |
 [Viewer]
 ```
 
 The current implementation is CLI-first. It records communication events from direct TCP,
 UDP, and Serial sessions or TCP proxy sessions and writes them to stdout,
-optional JSONL logs, and optional UDS IPC event streams.
+optional JSONL logs, and optional UDS IPC event streams. The IPC channel is
+bidirectional: the viewer receives events and can send commands (e.g. `send`) back
+to the CLI.
 
 TCP Proxy Mode:
 
@@ -77,4 +79,10 @@ into the core library.
 
 UDS capture mode and UDS IPC are separate features. UDS capture mode analyzes Unix
 Domain Socket communication sessions. UDS IPC is an internal local communication
-channel between Packet Probe Core and a future viewer.
+channel between Packet Probe Core and the viewer.
+
+Sequence allocation:
+
+All capture sessions and the `EventPipeline` share a single `SequenceAllocator`
+created at startup. This gives every raw and derived event a globally unique sequence
+number without relying on separate counter ranges or magic offsets.
