@@ -14,6 +14,7 @@ class IpcClientWorker(QThread):
     status_changed = Signal(str)
     error_occurred = Signal(str)
     disconnected = Signal()
+    unilink_unavailable = Signal(str)
 
     def __init__(self, socket_path: str, parent: QObject | None = None):
         super().__init__(parent)
@@ -24,7 +25,9 @@ class IpcClientWorker(QThread):
 
     def run(self):
         if unilink is None:
-            self.error_occurred.emit(
+            # Unlike a transient IPC error, this can never resolve itself on retry -
+            # surface it through a dedicated signal so the UI can treat it differently.
+            self.unilink_unavailable.emit(
                 f"unilink-python is not installed or failed to import: {_UNILINK_IMPORT_ERROR}. "
                 "Install viewer dependencies and ensure unilink runtime libraries are available."
             )

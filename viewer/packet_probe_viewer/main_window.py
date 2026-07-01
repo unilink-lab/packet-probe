@@ -497,7 +497,7 @@ class MainWindow(QMainWindow):
         self.connect_btn.setEnabled(False)
         self.connect_btn.setText("Connecting...")
         self.socket_path_edit.setEnabled(False)
-        self.message_label.setText("")
+        self._set_message("")
 
         self.worker = IpcClientWorker(socket_path, self)
         self.worker.status_changed.connect(self.on_status_changed)
@@ -505,6 +505,7 @@ class MainWindow(QMainWindow):
         self.worker.event_received.connect(self.on_event_received)
         self.worker.metadata_received.connect(self.on_metadata_received)
         self.worker.disconnected.connect(self.on_worker_finished)
+        self.worker.unilink_unavailable.connect(self.on_unilink_unavailable)
         self.worker.start()
 
     def disconnect_socket(self):
@@ -523,14 +524,14 @@ class MainWindow(QMainWindow):
             self._ipc_connected = False
             self.connect_btn.setEnabled(False)
             self.connect_btn.setText("Connecting...")
-            self.message_label.setText("")
+            self._set_message("")
         elif status == "connected":
             self._ipc_connected = True
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Disconnect")
             self.socket_path_edit.setEnabled(False)
             self.clear_all()
-            self.message_label.setText("Live mode started")
+            self._set_message("Live mode started")
             self._refresh_send_group_enabled(True)
             if self.capture_process.is_running():
                 self.update_status("Status: capture running")
@@ -547,11 +548,31 @@ class MainWindow(QMainWindow):
                 self.set_mode("idle")
 
     def on_error_occurred(self, error_msg: str):
-        self.message_label.setText(f"Error: {error_msg}")
+        self._set_message(f"Error: {error_msg}", is_error=True)
         self.update_status("Status: failed")
 
+    def on_unilink_unavailable(self, message: str):
+        # Unlike a transient IPC error, this never resolves on its own: the CLI process
+        # (if any) keeps running, but the live event table will stay empty for the rest
+        # of this session. Make that permanent, non-retryable state hard to miss.
+        # (The status badge itself will settle back to the neutral "disconnected" style a
+        # moment later via the worker's own status_changed/disconnected signals - the
+        # persistent signal here is the message banner, dialog, and state label below.)
+        self._set_message(f"Error: {message}", is_error=True)
+        self.set_mode("no live view")
+        QMessageBox.critical(
+            self,
+            "Live View Unavailable",
+            "unilink-python is not installed or failed to import, so the viewer cannot "
+            "subscribe to the live IPC event stream:\n\n"
+            f"{message}\n\n"
+            "The CLI process (if running) is unaffected and will keep capturing/recording, "
+            "but no events will appear in this table until unilink-python is installed and "
+            "the viewer reconnects."
+        )
+
     def on_metadata_received(self, metadata: dict):
-        self.message_label.setText(format_metadata_message(metadata))
+        self._set_message(format_metadata_message(metadata))
 
     def on_event_received(self, event_dict: dict):
         event = PacketEvent(event_dict)
@@ -568,6 +589,10 @@ class MainWindow(QMainWindow):
             self.set_mode("idle")
 
     # ── Status indicator helpers ───────────────────────────────────────────
+
+    def _set_message(self, text: str, is_error: bool = False):
+        self.message_label.setText(text)
+        self.message_label.setStyleSheet("color: #fca5a5; font-weight: 600;" if is_error else "")
 
     def update_status(self, text: str):
         self.status_label.setText(text)
@@ -614,6 +639,10 @@ class MainWindow(QMainWindow):
         elif lower_mode == "offline":
             self.state_label.setStyleSheet(
                 "background-color: #312e81; color: #a5b4fc; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #4f46e5;"
+            )
+        elif lower_mode == "no live view":
+            self.state_label.setStyleSheet(
+                "background-color: #991b1b; color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #dc2626;"
             )
         else:  # "idle"
             self.state_label.setStyleSheet(
@@ -764,7 +793,7 @@ class MainWindow(QMainWindow):
 
     def _on_ipc_socket_failed(self, reason: str):
         self._ipc_connector = None
-        self.message_label.setText(f"Error: {reason}")
+        self._set_message(f"Error: {reason}", is_error=True)
         self.stop_capture()
         self._restore_capture_controls()
         self.set_mode("idle")
@@ -893,7 +922,7 @@ class MainWindow(QMainWindow):
         try:
             result = load_packet_probe_jsonl(path)
         except Exception as exc:
-            self.message_label.setText(f"Error loading log: {exc}")
+            self._set_message(f"Error loading log: {exc}", is_error=True)
             return
 
         events = [PacketEvent(e) for e in result.events]
@@ -914,9 +943,9 @@ class MainWindow(QMainWindow):
             msg = f"Loaded {count} events from {filename}"
 
         if meta_msg:
-            self.message_label.setText(f"{meta_msg}\n{msg}")
+            self._set_message(f"{meta_msg}\n{msg}")
         else:
-            self.message_label.setText(msg)
+            self._set_message(msg)
 
     def on_send_format_changed(self):
         is_hex = self.hex_radio.isChecked()
