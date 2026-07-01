@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self.capture_process = CaptureProcess(self)
         self._ipc_connector: IpcConnector | None = None
         self._ipc_connected = False
+        self._active_capture_mode = ""
 
         self.active_send_mode: str = "hex"
 
@@ -420,7 +421,7 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(self.table_view)
 
         # Send Panel
-        self.send_group = QGroupBox("Send Message (to Target Device via CLI Stdin)", self)
+        self.send_group = QGroupBox("Send Message (to Target Device)", self)
         self.send_group.setEnabled(False)
         send_layout = QHBoxLayout(self.send_group)
 
@@ -530,7 +531,7 @@ class MainWindow(QMainWindow):
             self.socket_path_edit.setEnabled(False)
             self.clear_all()
             self.message_label.setText("Live mode started")
-            self.send_group.setEnabled(True)
+            self._refresh_send_group_enabled(True)
             if self.capture_process.is_running():
                 self.update_status("Status: capture running")
                 self.set_mode("launcher")
@@ -571,9 +572,16 @@ class MainWindow(QMainWindow):
     def update_status(self, text: str):
         self.status_label.setText(text)
         lower_text = text.lower()
-        if "connected" in lower_text or "running" in lower_text:
+        # "disconnected" and "failed"/"error" must be checked before the generic
+        # "connected"/"running" match below, since "disconnected" contains "connected"
+        # as a substring and would otherwise get the same "success" styling.
+        if "disconnected" in lower_text:
             self.status_label.setStyleSheet(
-                "background-color: #064e3b; color: #34d399; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #059669;"
+                "background-color: #1f2937; color: #9ca3af; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #374151;"
+            )
+        elif "failed" in lower_text or "error" in lower_text:
+            self.status_label.setStyleSheet(
+                "background-color: #991b1b; color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #dc2626;"
             )
         elif "connecting" in lower_text or "launching" in lower_text:
             self.status_label.setStyleSheet(
@@ -583,9 +591,9 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet(
                 "background-color: #312e81; color: #a5b4fc; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #4f46e5;"
             )
-        elif "failed" in lower_text or "error" in lower_text:
+        elif "connected" in lower_text or "running" in lower_text:
             self.status_label.setStyleSheet(
-                "background-color: #991b1b; color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #dc2626;"
+                "background-color: #064e3b; color: #34d399; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #059669;"
             )
         else:
             self.status_label.setStyleSheet(
@@ -653,13 +661,28 @@ class MainWindow(QMainWindow):
 
     # ── Capture lifecycle ──────────────────────────────────────────────────
 
+    # Capture modes where the CLI accepts no send input at all (no stdin loop,
+    # no IPC command handler) - see run_tcp_proxy.cpp.
+    _SEND_UNSUPPORTED_MODES = ("TCP Proxy",)
+
+    def _refresh_send_group_enabled(self, active: bool):
+        send_capable = active and self._active_capture_mode not in self._SEND_UNSUPPORTED_MODES
+        self.send_group.setEnabled(send_capable)
+        if active and not send_capable:
+            self.send_group.setToolTip(
+                f"{self._active_capture_mode} mode forwards traffic between an existing client and "
+                "target; it does not support sending messages from the viewer."
+            )
+        else:
+            self.send_group.setToolTip("")
+
     def _set_capture_controls_running(self, running: bool):
         self.start_capture_btn.setEnabled(not running)
         self.stop_capture_btn.setEnabled(running)
         self.cli_path_edit.setEnabled(not running)
         self.browse_cli_btn.setEnabled(not running)
         self.conn_group.setEnabled(not running)
-        self.send_group.setEnabled(running)
+        self._refresh_send_group_enabled(running)
 
     def _restore_capture_controls(self):
         self._set_capture_controls_running(False)
@@ -680,6 +703,7 @@ class MainWindow(QMainWindow):
             return
 
         args_text = self.cli_args_edit.text().strip()
+        self._active_capture_mode = self.mode_combo.currentText()
 
         self.generated_ipc_path = make_default_ipc_path()
         self.socket_path_edit.setText(self.generated_ipc_path)
@@ -978,8 +1002,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "Incompatible Mode",
-                    "CLI is running in --send-text mode, which cannot receive raw hex bytes.\n"
-                    "Please remove '--send-text' from Args to allow dynamic hex sending."
+                    "No IPC connection is active, so this falls back to CLI stdin, which was "
+                    "launched in --send-text mode and cannot receive raw hex bytes.\n"
+                    "Reconnect via IPC to send hex regardless of this flag, or remove "
+                    "'--send-text' from Extra Args and restart capture."
                 )
                 return
             eol_idx = self.eol_combo.currentIndex()
