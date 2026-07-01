@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #if defined(_WIN32)
 #include <io.h>
 #else
@@ -38,8 +40,28 @@ std::unique_ptr<IpcEventServer> make_ipc_server(CliOptions const& options);
 EventPipeline make_pipeline(CliOptions const& options, JsonlRecorder& recorder, IpcEventServer* ipc_server,
                             SharedSequenceAllocator seq_alloc);
 
+// Deregisters ipc_server's command handler on scope exit, so a handler that
+// captures a session by reference can never fire after that session is gone.
+class IpcHandlerGuard {
+ public:
+  explicit IpcHandlerGuard(IpcEventServer* ipc_server) : ipc_server_(ipc_server) {}
+  ~IpcHandlerGuard() {
+    if (ipc_server_) {
+      ipc_server_->set_command_handler(nullptr);
+    }
+  }
+  IpcHandlerGuard(IpcHandlerGuard const&) = delete;
+  IpcHandlerGuard& operator=(IpcHandlerGuard const&) = delete;
+
+ private:
+  IpcEventServer* ipc_server_;
+};
+
 template <typename Session>
-int run_sender_session(Session& session, SendInputOptions const& send_options, StopRequested const& stop_requested) {
+int run_sender_session(Session& session, SendInputOptions const& send_options, StopRequested const& stop_requested,
+                        IpcEventServer* ipc_server = nullptr) {
+  IpcHandlerGuard const ipc_handler_guard(ipc_server);
+
   if (send_options.format == SendInputFormat::File) {
     auto payload = read_binary_file(send_options.file_path);
     if (!session.send(std::move(payload))) {
@@ -68,37 +90,35 @@ int run_sender_session(Session& session, SendInputOptions const& send_options, S
   return 0;
 }
 
-namespace {
-
-// Extract a string field value from a minimal JSON object.
-// Only handles simple {"key":"value"} patterns without nesting or escaping.
-inline std::string extract_json_string_field(std::string_view line, std::string_view key) {
-  std::string pattern;
-  pattern.reserve(key.size() + 4);
-  pattern += '"';
-  pattern += key;
-  pattern += "\":\"";
-  auto pos = line.find(pattern);
-  if (pos == std::string_view::npos) return {};
-  pos += pattern.size();
-  auto end = line.find('"', pos);
-  if (end == std::string_view::npos) return {};
-  return std::string(line.substr(pos, end - pos));
-}
-
-}  // namespace
-
 // Registers an IPC command handler that routes {"command":"send","payload_hex":"..."} to session.send().
+// The handler must be deregistered (see IpcHandlerGuard) before `session` is destroyed, since it
+// captures `session` by reference.
 template <typename Session>
 void install_ipc_send_handler(IpcEventServer* ipc_server, Session& session) {
   if (!ipc_server) return;
   ipc_server->set_command_handler([&session](std::string_view line) {
-    if (extract_json_string_field(line, "command") != "send") return;
-    auto hex = extract_json_string_field(line, "payload_hex");
+    nlohmann::json msg;
+    try {
+      msg = nlohmann::json::parse(std::string(line));
+    } catch (nlohmann::json::parse_error const&) {
+      return;
+    }
+    if (!msg.is_object()) return;
+
+    auto const command_it = msg.find("command");
+    if (command_it == msg.end() || !command_it->is_string() || *command_it != "send") return;
+
+    auto const payload_it = msg.find("payload_hex");
+    if (payload_it == msg.end() || !payload_it->is_string()) return;
+    auto const hex = payload_it->get<std::string>();
     if (hex.empty()) return;
+
     try {
       session.send(parse_hex_payload(hex));
+    } catch (std::exception const& ex) {
+      std::cerr << "IPC send command failed: " << ex.what() << '\n';
     } catch (...) {
+      std::cerr << "IPC send command failed: unknown error\n";
     }
   });
 }

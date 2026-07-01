@@ -1,5 +1,6 @@
 #include "capture/udp_direct_capture_session.hpp"
 
+#include <cassert>
 #include <stdexcept>
 #include <utility>
 
@@ -25,7 +26,9 @@ struct UdpDirectCaptureSession::Impl {
 };
 
 UdpDirectCaptureSession::UdpDirectCaptureSession(UdpDirectCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
-    : options_(std::move(options)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {}
+    : options_(std::move(options)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {
+  assert(seq_alloc_ && "UdpDirectCaptureSession requires a non-null SharedSequenceAllocator");
+}
 
 UdpDirectCaptureSession::~UdpDirectCaptureSession() { stop(); }
 

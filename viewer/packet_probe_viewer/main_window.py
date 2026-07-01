@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.worker: IpcClientWorker | None = None
         self.capture_process = CaptureProcess(self)
         self._ipc_connector: IpcConnector | None = None
+        self._ipc_connected = False
 
         self.active_send_mode: str = "hex"
 
@@ -506,6 +507,7 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def disconnect_socket(self):
+        self._ipc_connected = False
         if self._ipc_connector:
             self._ipc_connector.cancel()
             self._ipc_connector = None
@@ -517,10 +519,12 @@ class MainWindow(QMainWindow):
     def on_status_changed(self, status: str):
         self.update_status(f"Status: {status}")
         if status == "connecting":
+            self._ipc_connected = False
             self.connect_btn.setEnabled(False)
             self.connect_btn.setText("Connecting...")
             self.message_label.setText("")
         elif status == "connected":
+            self._ipc_connected = True
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Disconnect")
             self.socket_path_edit.setEnabled(False)
@@ -534,6 +538,7 @@ class MainWindow(QMainWindow):
                 self.update_status("Status: connected")
                 self.set_mode("live")
         elif status == "disconnected":
+            self._ipc_connected = False
             self.connect_btn.setEnabled(True)
             self.connect_btn.setText("Connect")
             self.socket_path_edit.setEnabled(True)
@@ -897,8 +902,20 @@ class MainWindow(QMainWindow):
         else:
             self.send_input.setPlaceholderText("Type message to send...")
 
+    def _clean_hex_input(self, text: str) -> str | None:
+        clean_hex = re.sub(r'(0x|0X|[\s:\-])', '', text).lower()
+        if not clean_hex or not all(c in '0123456789abcdefABCDEF' for c in clean_hex) or len(clean_hex) % 2 != 0:
+            QMessageBox.warning(
+                self,
+                "Invalid Hex",
+                "Please enter a valid hex string (e.g. AA BB CC or AABBCC).\n"
+                "Note: Each byte must have two hex digits."
+            )
+            return None
+        return clean_hex
+
     def send_data(self):
-        can_send_via_ipc = self.worker is not None and self.worker.isRunning()
+        can_send_via_ipc = self._ipc_connected and self.worker is not None
         can_send_via_stdin = self.capture_process.is_running()
 
         if not can_send_via_ipc and not can_send_via_stdin:
@@ -915,11 +932,8 @@ class MainWindow(QMainWindow):
         if can_send_via_ipc:
             # Prefer IPC channel: resolve hex bytes and send as {"command":"send","payload_hex":"..."}
             if is_gui_hex:
-                clean_hex = re.sub(r'(0x|0X|[\s:\-])', '', text).lower()
-                if not clean_hex or not all(c in '0123456789abcdefABCDEF' for c in clean_hex) or len(clean_hex) % 2 != 0:
-                    QMessageBox.warning(self, "Invalid Hex",
-                                        "Please enter a valid hex string (e.g. AA BB CC or AABBCC).\n"
-                                        "Note: Each byte must have two hex digits.")
+                clean_hex = self._clean_hex_input(text)
+                if clean_hex is None:
                     return
                 payload_hex = clean_hex
             else:
@@ -942,14 +956,8 @@ class MainWindow(QMainWindow):
 
         if is_cli_hex:
             if is_gui_hex:
-                clean_hex = re.sub(r'(0x|0X|[\s:\-])', '', text).lower()
-                if not clean_hex or not all(c in '0123456789abcdefABCDEF' for c in clean_hex) or len(clean_hex) % 2 != 0:
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Hex",
-                        "Please enter a valid hex string (e.g. AA BB CC or AABBCC).\n"
-                        "Note: Each byte must have two hex digits."
-                    )
+                clean_hex = self._clean_hex_input(text)
+                if clean_hex is None:
                     return
                 write_payload = clean_hex + "\n"
             else:

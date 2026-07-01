@@ -1,5 +1,6 @@
 #include "core/event_pipeline.hpp"
 
+#include <cassert>
 #include <exception>
 #include <string>
 #include <utility>
@@ -8,7 +9,9 @@
 namespace packet_probe {
 
 EventPipeline::EventPipeline(DecoderFactory decoder_factory, EventSink sink, SharedSequenceAllocator seq_alloc)
-    : decoder_factory_(std::move(decoder_factory)), sink_(std::move(sink)), seq_alloc_(std::move(seq_alloc)) {}
+    : decoder_factory_(std::move(decoder_factory)), sink_(std::move(sink)), seq_alloc_(std::move(seq_alloc)) {
+  assert(seq_alloc_ && "EventPipeline requires a non-null SharedSequenceAllocator");
+}
 
 void EventPipeline::consume(PacketEvent const& event) {
   if (!sink_) {

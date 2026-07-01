@@ -14,6 +14,17 @@ set(PACKET_PROBE_UNILINK_SOURCE_DIR
 )
 set(PACKET_PROBE_INTERNAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
+find_package(nlohmann_json CONFIG QUIET)
+if(NOT nlohmann_json_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+  )
+  FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 if(EXISTS "${PACKET_PROBE_UNILINK_SOURCE_DIR}/CMakeLists.txt")
   set(UNILINK_BUILD_TESTS
       OFF

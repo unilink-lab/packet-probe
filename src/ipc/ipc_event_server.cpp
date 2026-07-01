@@ -67,9 +67,13 @@ struct IpcEventServer::Impl {
     });
 
     server->on_message([this](unilink::MessageContext const& ctx) {
-      std::lock_guard<std::mutex> lock(command_handler_mutex);
-      if (command_handler) {
-        command_handler(ctx.data());
+      CommandHandler handler_copy;
+      {
+        std::lock_guard<std::mutex> lock(command_handler_mutex);
+        handler_copy = command_handler;
+      }
+      if (handler_copy) {
+        handler_copy(ctx.data());
       }
     });
 

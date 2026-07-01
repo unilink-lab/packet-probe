@@ -18,5 +18,5 @@ add_executable(packet-probe main.cpp ${PACKET_PROBE_CLI_COMMON_SOURCES} ${PACKET
 
 target_compile_features(packet-probe PRIVATE cxx_std_20)
 target_include_directories(packet-probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../src")
-target_link_libraries(packet-probe PRIVATE packet_probe::capture)
+target_link_libraries(packet-probe PRIVATE packet_probe::capture nlohmann_json::nlohmann_json)
 set_target_properties(packet-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")

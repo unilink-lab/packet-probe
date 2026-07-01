@@ -20,7 +20,7 @@ int run_udp(CliOptions const& options, StopRequested const& stop_requested) {
 
   install_ipc_send_handler(ipc_server.get(), session);
   session.start();
-  return run_sender_session(session, options.send_options, stop_requested);
+  return run_sender_session(session, options.send_options, stop_requested, ipc_server.get());
 }
 
 }  // namespace packet_probe::cli

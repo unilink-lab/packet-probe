@@ -1,5 +1,6 @@
 #include "capture/tcp_direct_capture_session.hpp"
 
+#include <cassert>
 #include <chrono>
 #include <stdexcept>
 #include <utility>
@@ -13,7 +14,9 @@ struct TcpDirectCaptureSession::Impl {
 };
 
 TcpDirectCaptureSession::TcpDirectCaptureSession(TcpDirectCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
-    : options_(std::move(options)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {}
+    : options_(std::move(options)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {
+  assert(seq_alloc_ && "TcpDirectCaptureSession requires a non-null SharedSequenceAllocator");
+}
 
 TcpDirectCaptureSession::~TcpDirectCaptureSession() { stop(); }
 

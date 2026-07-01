@@ -2,6 +2,7 @@
 
 #include <array>
 #include <boost/asio.hpp>
+#include <cassert>
 #include <exception>
 #include <mutex>
 #include <stdexcept>
@@ -42,7 +43,9 @@ struct TcpProxyCaptureSession::Impl {
 };
 
 TcpProxyCaptureSession::TcpProxyCaptureSession(TcpProxyConfig config, EventCallback on_event, SharedSequenceAllocator seq_alloc)
-    : config_(std::move(config)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {}
+    : config_(std::move(config)), on_event_(std::move(on_event)), seq_alloc_(std::move(seq_alloc)), impl_(std::make_unique<Impl>()) {
+  assert(seq_alloc_ && "TcpProxyCaptureSession requires a non-null SharedSequenceAllocator");
+}
 
 TcpProxyCaptureSession::~TcpProxyCaptureSession() { stop(); }
 

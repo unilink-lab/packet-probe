@@ -1,4 +1,5 @@
 import json
+import threading
 from PySide6.QtCore import QThread, Signal, QObject
 
 try:
@@ -19,6 +20,7 @@ class IpcClientWorker(QThread):
         self.socket_path = socket_path
         self._running = False
         self._client = None
+        self._client_lock = threading.Lock()
 
     def run(self):
         if unilink is None:
@@ -41,7 +43,8 @@ class IpcClientWorker(QThread):
             client.on_disconnect(self._on_disconnect)
             client.on_error(self._on_error)
             client.on_message(self._on_message)
-            self._client = client
+            with self._client_lock:
+                self._client = client
 
             started = client.start_sync()
             if not started:
@@ -102,8 +105,10 @@ class IpcClientWorker(QThread):
             self.error_occurred.emit(f"Message handling error: {exc}")
 
     def send_command(self, cmd: dict) -> None:
-        client = self._client
-        if client is not None and self._running:
+        with self._client_lock:
+            client = self._client
+            if client is None or not self._running:
+                return
             try:
                 client.send_line(json.dumps(cmd))
             except Exception as exc:
@@ -112,19 +117,20 @@ class IpcClientWorker(QThread):
     def stop(self):
         self._running = False
 
-        client = self._client
-        if client is not None:
-            try:
-                client.stop()
-            except Exception as exc:
-                self.error_occurred.emit(f"IPC stop error: {exc}")
+        with self._client_lock:
+            client = self._client
+            if client is not None:
+                try:
+                    client.stop()
+                except Exception as exc:
+                    self.error_occurred.emit(f"IPC stop error: {exc}")
 
     def _cleanup(self):
-        client = self._client
-        self._client = None
-
-        if client is not None:
-            try:
-                client.stop()
-            except Exception:
-                pass
+        with self._client_lock:
+            client = self._client
+            self._client = None
+            if client is not None:
+                try:
+                    client.stop()
+                except Exception:
+                    pass
