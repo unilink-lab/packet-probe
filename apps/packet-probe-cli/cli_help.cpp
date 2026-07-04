@@ -14,6 +14,7 @@ void print_help(std::ostream& out) {
       << "  packet-probe serial --port <path> --baudrate <rate> [--log <path>] [--ipc <path>] [--hex]\n"
       << "  packet-probe udp --bind-host <host> --bind-port <port> [--target-host <host>] "
          "[--target-port <port>] [--log <path>] [--ipc <path>] [--hex]\n"
+      << "  packet-probe engine --ipc <path>\n"
       << "\n"
       << "Modes:\n"
       << "  tcp-client    Connect directly to a TCP target device\n"
@@ -21,6 +22,8 @@ void print_help(std::ostream& out) {
       << "  tcp-proxy     Listen locally and proxy one TCP client to a target device\n"
       << "  serial        Connect directly to a serial target device\n"
       << "  udp           Bind a UDP socket and inspect datagrams\n"
+      << "  engine        Start idle and accept configure/start_capture/stop_capture\n"
+      << "                commands over IPC (see docs/ipc-protocol.md)\n"
       << "\n"
       << "Options:\n"
       << "  --host <host>     Target host for tcp-client mode\n"
@@ -136,6 +139,19 @@ void print_udp_help(std::ostream& out) {
       << "  --help                     Show this help\n";
 }
 
+void print_engine_help(std::ostream& out) {
+  out << "Usage:\n"
+      << "  packet-probe engine --ipc <path>\n"
+      << "\n"
+      << "Starts idle (no capture session) and waits for IPC control commands on\n"
+      << "<path>: configure, start_capture, stop_capture, get_status,\n"
+      << "list_serial_ports, send. See docs/ipc-protocol.md for the message schema.\n"
+      << "\n"
+      << "Options:\n"
+      << "  --ipc <path>          Unix Domain Socket path for the IPC control channel\n"
+      << "  --help                Show this help\n";
+}
+
 void print_help_for_mode(std::ostream& out, CliOptions const& options) {
   if (options.mode == "tcp-server") {
     print_tcp_server_help(out);
@@ -145,6 +161,8 @@ void print_help_for_mode(std::ostream& out, CliOptions const& options) {
     print_serial_help(out);
   } else if (options.mode == "udp") {
     print_udp_help(out);
+  } else if (options.mode == "engine") {
+    print_engine_help(out);
   } else {
     print_help(out);
   }

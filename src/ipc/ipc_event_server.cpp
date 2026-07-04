@@ -49,6 +49,9 @@ struct IpcEventServer::Impl {
     server = std::make_unique<unilink::UdsServer>(options.socket_path);
     server->max_clients(16);
     server->auto_start(false);
+    // IPC is a local, single-host control channel; restrict it to the owner to prevent
+    // other local users from observing captured traffic or issuing commands.
+    server->socket_permissions(0600);
 
     // Enable line framing so on_message delivers complete newline-terminated commands
     server->framer([]() {
@@ -73,7 +76,7 @@ struct IpcEventServer::Impl {
         handler_copy = command_handler;
       }
       if (handler_copy) {
-        handler_copy(ctx.data());
+        handler_copy(static_cast<IpcClientId>(ctx.client_id()), ctx.data());
       }
     });
 
@@ -114,6 +117,20 @@ struct IpcEventServer::Impl {
     }
     server->broadcast(serialize_event_jsonl(event) + '\n');
   }
+
+  bool send_to_client(IpcClientId client_id, std::string const& line) {
+    if (!server || !is_running.load()) {
+      return false;
+    }
+    return server->send_to(static_cast<unilink::ClientId>(client_id), line + '\n');
+  }
+
+  void broadcast_raw(std::string const& line) {
+    if (!server || !is_running.load()) {
+      return;
+    }
+    server->broadcast(line + '\n');
+  }
 };
 
 IpcEventServer::IpcEventServer(IpcServerOptions options) : impl_(std::make_unique<Impl>(std::move(options))) {}
@@ -136,6 +153,21 @@ void IpcEventServer::broadcast_metadata() {
 void IpcEventServer::broadcast(PacketEvent const& event) {
   try {
     impl_->broadcast(event);
+  } catch (...) {
+  }
+}
+
+bool IpcEventServer::send_to_client(IpcClientId client_id, std::string const& line) {
+  try {
+    return impl_->send_to_client(client_id, line);
+  } catch (...) {
+    return false;
+  }
+}
+
+void IpcEventServer::broadcast_raw(std::string const& line) {
+  try {
+    impl_->broadcast_raw(line);
   } catch (...) {
   }
 }

@@ -69,6 +69,8 @@ schema as JSONL log files.
 - latency event
 - error event
 - state event
+- result (engine mode only; ack for a command, see "Control Protocol v2" below)
+- status (engine mode only; broadcast on engine state changes, see "Control Protocol v2" below)
 
 ### Viewer to core messages
 
@@ -82,7 +84,86 @@ Sends a payload to the connected device. Supported in tcp-client, tcp-server, se
 
 - `payload_hex`: hex-encoded bytes to send (no spaces, separators, or `0x` prefix)
 - The CLI decodes the hex payload and calls the session's `send()` method
-- If decoding fails or the session has no send method, the command is silently ignored
+- In the five direct/proxy CLI modes (`tcp-client`, `tcp-server`, `tcp-proxy`, `serial`,
+  `udp`), if decoding fails or the session has no send method, the command is silently
+  ignored — this legacy behavior is unchanged for backward compatibility.
+- In `engine` mode (see below), `send` is dispatched through the same command/result
+  protocol as every other engine command and always receives an explicit `result` ack.
+
+## Control Protocol v2 (Engine Mode)
+
+`packet-probe engine --ipc <path>` (see [capture-modes.md](capture-modes.md#engine-mode))
+adds a small set of additional commands so a viewer can configure and start/stop capture
+sessions without restarting the process. These commands are only recognized when
+`packet-probe` was started in `engine` mode; the five direct/proxy CLI modes only
+recognize the legacy `send` command described above.
+
+Every engine command may include an `id` (any string chosen by the caller). The engine
+echoes that `id` back in the corresponding `result` message so a viewer can correlate
+requests with responses; multiple viewer clients may be issuing commands concurrently, so
+callers should not assume replies arrive in the order requests were sent, and should not
+assume no other message (e.g. a captured event, or another client's result) will be
+interleaved on the stream — always dispatch on each line's `type` (and `id` for results),
+never on position.
+
+### Commands
+
+```json
+{"type":"command","id":"c1","command":"configure","config":{"mode":"udp","bind_host":"0.0.0.0","bind_port":19000}}
+{"type":"command","id":"c2","command":"start_capture"}
+{"type":"command","id":"c3","command":"stop_capture"}
+{"type":"command","id":"c4","command":"get_status"}
+{"type":"command","id":"c5","command":"list_serial_ports"}
+```
+
+- `configure`: replaces the engine's capture configuration. Only accepted while idle
+  (fails with an error if a capture session is currently running). `config` mirrors the
+  CLI's own options: `mode` (one of `tcp-client`, `tcp-server`, `tcp-proxy`, `serial`,
+  `udp`), the mode's host/port fields (`host`/`port`, `listen_host`/`listen_port`,
+  `bind_host`/`bind_port`, `target_host`/`target_port`, `serial_port`), serial framing
+  (`baudrate`, `data_bits`, `stop_bits`, `parity`, `flow_control`), `log_path`, `hex_raw`,
+  `hex_frame`, `latency`, and a nested `decoder` object (`decoder`, `frame_size`,
+  `delimiter_hex`, `include_delimiter`, `length_size`, `length_endian`,
+  `length_includes_header`). Unknown/omitted fields fall back to the same defaults as
+  the CLI. Invalid or mode-inappropriate combinations are rejected with an error, using
+  the same validation rules as CLI argv parsing.
+- `start_capture`: builds and starts a capture session from the last `configure`d
+  config. Fails if not yet configured, or if already capturing.
+- `stop_capture`: stops the active capture session and returns to idle. The configured
+  options are retained, so a subsequent `start_capture` (optionally preceded by a new
+  `configure`) does not require reconnecting or restarting the process.
+- `get_status`: returns the current engine state, configuration (if any), and event
+  counters without changing anything.
+- `list_serial_ports`: best-effort scan for available serial devices. Always returns
+  `ok:true` with a (possibly empty) `ports` array; never fails.
+
+### Results
+
+Every command (including `send`, in engine mode) receives exactly one `result` message,
+sent only to the client that issued the command:
+
+```json
+{"type":"result","id":"c1","ok":true}
+{"type":"result","id":"c2","ok":false,"error":"not configured; call configure first"}
+{"type":"result","id":"c5","ok":true,"ports":["/dev/ttyUSB0","/dev/ttyACM0"]}
+```
+
+`get_status`'s result additionally includes `engine_state`, `config` (if configured),
+and `counters`; see the `status` message below for the exact shape.
+
+### Status broadcasts
+
+After every successful `configure`, `start_capture`, and `stop_capture`, the engine
+broadcasts a `status` message to **all** connected clients (not just the one that issued
+the command), so every viewer stays in sync with engine state changed by another client:
+
+```json
+{"type":"status","engine_state":"capturing","config":{"mode":"udp", "...": "..."},"counters":{"events_seen":42}}
+```
+
+- `engine_state`: `"idle"` or `"capturing"`
+- `config`: the currently configured options (omitted if never configured)
+- `counters.events_seen`: total events consumed by the pipeline since the engine started
 
 ## Multi-Client Behavior
 
@@ -124,18 +205,25 @@ When Packet Probe stops:
 
 ## Viewer Policy
 
-The CLI starts capture. The viewer subscribes to events and can send commands
-back over the same socket. Capture start/stop control, filter subscription,
-snapshot requests, and mutation APIs remain out of scope.
+In the five direct/proxy CLI modes, the CLI itself starts capture from argv and the
+viewer only subscribes to events and sends `send` commands back over the same socket;
+capture start/stop control, filter subscription, snapshot requests, and other mutation
+APIs remain out of scope for those modes.
+
+In `engine` mode, the viewer drives capture start/stop and configuration itself via the
+Control Protocol v2 commands described above. Filter subscription, snapshot requests, and
+log replay remain out of scope even in engine mode (see "Future Extensions").
 
 ## Reconnect Policy
 
 The viewer should tolerate disconnects and reconnect to the IPC socket. On
-reconnect, the core sends a fresh metadata line before new event lines.
+reconnect, the core sends a fresh metadata line before new event lines. In engine mode,
+a reconnecting viewer should call `get_status` to recover the current engine state and
+configuration, since it will not have observed any `status` broadcasts made while
+disconnected.
 
 ## Future Extensions
 
-- capture start/stop control
 - filter subscription
 - snapshot request
 - log replay stream

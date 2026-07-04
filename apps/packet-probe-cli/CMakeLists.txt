@@ -3,6 +3,7 @@ set(PACKET_PROBE_CLI_COMMON_SOURCES
     cli_send_options.cpp
     cli_options.cpp
     cli_help.cpp
+    engine_config.cpp
 )
 
 set(PACKET_PROBE_CLI_RUN_SOURCES
@@ -12,6 +13,8 @@ set(PACKET_PROBE_CLI_RUN_SOURCES
     run_tcp_server.cpp
     run_serial.cpp
     run_udp.cpp
+    run_engine.cpp
+    engine_controller.cpp
 )
 
 add_executable(packet-probe main.cpp ${PACKET_PROBE_CLI_COMMON_SOURCES} ${PACKET_PROBE_CLI_RUN_SOURCES})

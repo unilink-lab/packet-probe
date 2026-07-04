@@ -62,6 +62,31 @@ target_include_directories(test_cli_options PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(test_cli_options PRIVATE packet_probe::core)
 add_test(NAME test_cli_options COMMAND test_cli_options)
 
+add_executable(
+  test_engine_config
+  test_engine_config.cpp
+  ../apps/packet-probe-cli/engine_config.cpp
+)
+target_include_directories(test_engine_config PRIVATE ../apps/packet-probe-cli)
+target_include_directories(test_engine_config PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(test_engine_config PRIVATE packet_probe::core nlohmann_json::nlohmann_json)
+add_test(NAME test_engine_config COMMAND test_engine_config)
+
+add_executable(
+  test_engine_controller
+  test_engine_controller.cpp
+  ../apps/packet-probe-cli/engine_controller.cpp
+  ../apps/packet-probe-cli/engine_config.cpp
+  ../apps/packet-probe-cli/run_common.cpp
+  ../apps/packet-probe-cli/cli_options.cpp
+  ../apps/packet-probe-cli/cli_decoder_options.cpp
+  ../apps/packet-probe-cli/cli_send_options.cpp
+)
+target_include_directories(test_engine_controller PRIVATE ../apps/packet-probe-cli)
+target_include_directories(test_engine_controller PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(test_engine_controller PRIVATE packet_probe::core packet_probe::capture unilink::unilink nlohmann_json::nlohmann_json)
+add_test(NAME test_engine_controller COMMAND test_engine_controller)
+
 add_executable(test_tcp_server_capture_session test_tcp_server_capture_session.cpp)
 target_include_directories(test_tcp_server_capture_session PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(test_tcp_server_capture_session PRIVATE packet_probe::capture)

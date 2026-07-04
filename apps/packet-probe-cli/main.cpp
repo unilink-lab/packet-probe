@@ -34,6 +34,9 @@ int run_mode(packet_probe::cli::CliOptions const& options) {
   if (options.mode == "udp") {
     return run_udp(options, stop_requested);
   }
+  if (options.mode == "engine") {
+    return run_engine(options, stop_requested);
+  }
 
   throw std::invalid_argument("unknown or missing mode: " + options.mode);
 }

@@ -20,6 +20,26 @@ optional JSONL logs, and optional UDS IPC event streams. The IPC channel is
 bidirectional: the viewer receives events and can send commands (e.g. `send`) back
 to the CLI.
 
+Engine mode (`packet-probe engine --ipc <path>`) is a long-lived variant of the CLI
+process that starts idle and accepts configure/start_capture/stop_capture commands over
+the same IPC channel (see [docs/ipc-protocol.md](ipc-protocol.md)):
+
+```text
+[Viewer]
+   |  configure / start_capture / stop_capture / send  (commands)
+   |  result / status / events                          (replies)
+   v
+[EngineController] -- owns --> [CaptureSession] (one of the 5 direct/proxy sessions)
+   |
+   `--> [EventPipeline] --> [JsonlRecorder] + [IpcEventServer] (broadcast)
+```
+
+`EngineController` and the single `IpcEventServer`/`SequenceAllocator` it is built on
+persist across repeated configure/start/stop cycles, so a viewer can change capture
+settings and restart a session without restarting the `packet-probe` process. The five
+direct/proxy CLI modes are unaffected: they still parse capture configuration from argv
+and run a single session for the process lifetime, unrelated to engine mode.
+
 TCP Proxy Mode:
 
 ```text

@@ -11,6 +11,7 @@ void print_tcp_server_help(std::ostream& out);
 void print_tcp_proxy_help(std::ostream& out);
 void print_serial_help(std::ostream& out);
 void print_udp_help(std::ostream& out);
+void print_engine_help(std::ostream& out);
 void print_help_for_mode(std::ostream& out, CliOptions const& options);
 
 }  // namespace packet_probe::cli

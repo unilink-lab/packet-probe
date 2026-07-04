@@ -96,7 +96,7 @@ int run_sender_session(Session& session, SendInputOptions const& send_options, S
 template <typename Session>
 void install_ipc_send_handler(IpcEventServer* ipc_server, Session& session) {
   if (!ipc_server) return;
-  ipc_server->set_command_handler([&session](std::string_view line) {
+  ipc_server->set_command_handler([&session](IpcClientId /*client_id*/, std::string_view line) {
     nlohmann::json msg;
     try {
       msg = nlohmann::json::parse(std::string(line));

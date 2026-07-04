@@ -123,6 +123,12 @@ CliOptions parse_args(int argc, char** argv) {
 }
 
 void validate_options(CliOptions const& options) {
+  if (options.mode == "engine") {
+    if (options.ipc_path.empty()) {
+      throw std::invalid_argument("engine requires --ipc");
+    }
+    return;
+  }
   if (options.mode == "tcp-client") {
     if (options.host.empty()) {
       throw std::invalid_argument("tcp-client requires --host");
