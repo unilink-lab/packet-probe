@@ -1,5 +1,5 @@
 from collections import deque
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QColor
 from .event_model import PacketEvent, format_time_ns
 
@@ -112,3 +112,40 @@ class PacketTableModel(QAbstractTableModel):
         if 0 <= row < len(self.events):
             return self.events[row]
         return None
+
+
+class PacketFilterProxyModel(QSortFilterProxyModel):
+    """Filters a PacketTableModel by direction, event type, and free-text search
+    over the summary/hex payload. Values of "all"/"" disable that filter axis."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._direction = "all"
+        self._event_type = "all"
+        self._text = ""
+        self.setDynamicSortFilter(True)
+
+    def set_direction_filter(self, direction: str) -> None:
+        self._direction = direction
+        self.invalidate()
+
+    def set_type_filter(self, event_type: str) -> None:
+        self._event_type = event_type
+        self.invalidate()
+
+    def set_text_filter(self, text: str) -> None:
+        self._text = text.strip().lower()
+        self.invalidate()
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
+        model = self.sourceModel()
+        event = model.event_at(source_row) if model else None
+        if event is None:
+            return False
+        if self._direction != "all" and event.direction != self._direction:
+            return False
+        if self._event_type != "all" and event.type != self._event_type:
+            return False
+        if self._text and self._text not in f"{event.summary} {event.payload_hex}".lower():
+            return False
+        return True

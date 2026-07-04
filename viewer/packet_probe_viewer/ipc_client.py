@@ -1,3 +1,4 @@
+import itertools
 import json
 import threading
 from PySide6.QtCore import QThread, Signal, QObject
@@ -8,9 +9,18 @@ except ImportError as exc:
     unilink = None
     _UNILINK_IMPORT_ERROR = exc
 
+# Message types the engine's control protocol v2 uses for command acks/broadcasts
+# (see docs/ipc-protocol.md, "Control Protocol v2"). Everything else on the wire
+# (metadata aside) is a captured PacketEvent and goes to event_received.
+_RESULT_MESSAGE_TYPE = "result"
+_STATUS_MESSAGE_TYPE = "status"
+
+
 class IpcClientWorker(QThread):
     metadata_received = Signal(dict)
     event_received = Signal(dict)
+    result_received = Signal(dict)
+    status_received = Signal(dict)
     status_changed = Signal(str)
     error_occurred = Signal(str)
     disconnected = Signal()
@@ -22,6 +32,7 @@ class IpcClientWorker(QThread):
         self._running = False
         self._client = None
         self._client_lock = threading.Lock()
+        self._next_command_id = itertools.count(1)
 
     def run(self):
         if unilink is None:
@@ -97,8 +108,13 @@ class IpcClientWorker(QThread):
                 self.error_occurred.emit("Received malformed JSON line (not an object)")
                 return
 
-            if obj.get("type") == "metadata":
+            msg_type = obj.get("type")
+            if msg_type == "metadata":
                 self.metadata_received.emit(obj)
+            elif msg_type == _RESULT_MESSAGE_TYPE:
+                self.result_received.emit(obj)
+            elif msg_type == _STATUS_MESSAGE_TYPE:
+                self.status_received.emit(obj)
             else:
                 self.event_received.emit(obj)
 
@@ -107,15 +123,26 @@ class IpcClientWorker(QThread):
         except Exception as exc:
             self.error_occurred.emit(f"Message handling error: {exc}")
 
-    def send_command(self, cmd: dict) -> None:
+    def send_command(self, cmd: dict) -> str:
+        """Sends a command, assigning an "id" if the caller didn't set one.
+
+        Returns the id used, so the caller can correlate the eventual
+        result_received signal (see docs/ipc-protocol.md, "Control Protocol v2").
+        """
+        command_id = cmd.get("id")
+        if not command_id:
+            command_id = f"v{next(self._next_command_id)}"
+            cmd = {**cmd, "id": command_id}
+
         with self._client_lock:
             client = self._client
             if client is None or not self._running:
-                return
+                return command_id
             try:
                 client.send_line(json.dumps(cmd))
             except Exception as exc:
                 self.error_occurred.emit(f"Failed to send IPC command: {exc}")
+        return command_id
 
     def stop(self):
         self._running = False

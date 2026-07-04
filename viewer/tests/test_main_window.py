@@ -1,3 +1,5 @@
+import json
+
 from PySide6.QtCore import Qt
 from packet_probe_viewer.main_window import MainWindow
 from packet_probe_viewer.event_model import PacketEvent
@@ -27,8 +29,8 @@ def test_main_window_tabs(qtbot):
     })
     window.table_model.append_event(event)
 
-    # Select the row
-    idx = window.table_model.index(0, 0)
+    # Select the row (table_view is backed by the filter proxy, so map into it)
+    idx = window.filter_proxy.mapFromSource(window.table_model.index(0, 0))
     selection_model = window.table_view.selectionModel()
     selection_model.select(
         idx,
@@ -51,33 +53,81 @@ def test_main_window_send_payload_conversion(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    # Setup active command arguments showing hex send is active (default)
-    window.active_cmd_args = ["--send-hex"]
-    
-    # 1. Test Text Mode GUI sending to Hex Mode CLI
+    # Send only goes out over IPC (see docs/ipc-protocol.md, "Control Protocol v2");
+    # simulate a connected, capturing engine by stubbing the worker.
+    sent_commands = []
+
+    class FakeWorker:
+        def send_command(self, cmd):
+            sent_commands.append(cmd)
+            return cmd.get("id", "fake-id")
+
+    window.worker = FakeWorker()
+    window._ipc_connected = True
+    window._engine_state = "capturing"
+
+    # 1. Test Text Mode GUI sending
     window.text_radio.setChecked(True)
     window.eol_combo.setCurrentIndex(1)  # LF (\n)
     window.send_input.setText("Hello")
-    
-    # We stub capture_process.write_stdin to verify what is sent
-    written_data = []
-    window.capture_process.write_stdin = lambda d: written_data.append(d)
-    window.capture_process.is_running = lambda: True
 
     window.send_data()
-    # "Hello\n" -> "48656c6c6f0a\n"
-    assert len(written_data) == 1
-    assert written_data[0] == b"48656c6c6f0a\n"
+    # "Hello\n" -> hex "48656c6c6f0a"
+    assert len(sent_commands) == 1
+    assert sent_commands[0]["command"] == "send"
+    assert sent_commands[0]["payload_hex"] == "48656c6c6f0a"
 
-    # 2. Test Hex Mode GUI sending to Hex Mode CLI
-    written_data.clear()
+    # 2. Test Hex Mode GUI sending
+    sent_commands.clear()
     window.hex_radio.setChecked(True)
     window.send_input.setText("AA BB CC")
-    
+
     window.send_data()
-    # "AA BB CC" clean -> "aabbcc\n"
-    assert len(written_data) == 1
-    assert written_data[0] == b"aabbcc\n"
+    assert len(sent_commands) == 1
+    assert sent_commands[0]["command"] == "send"
+    assert sent_commands[0]["payload_hex"] == "aabbcc"
+
+
+def test_main_window_send_result_feedback(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._pending_commands["s1"] = "send"
+    window.on_result_received({"type": "result", "id": "s1", "ok": True})
+    assert "Sent" in window.send_feedback_label.text()
+
+    window._pending_commands["s2"] = "send"
+    window.on_result_received({"type": "result", "id": "s2", "ok": False, "error": "device gone"})
+    assert "device gone" in window.send_feedback_label.text()
+
+
+def test_main_window_send_requires_connected_capturing_engine(qtbot, monkeypatch):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    # Avoid a real (blocking) modal dialog in the test process.
+    warnings = []
+    monkeypatch.setattr(
+        "packet_probe_viewer.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: warnings.append(args[1:]),
+    )
+
+    window.send_input.setText("Hello")
+
+    # Not connected at all.
+    window.send_data()
+    assert len(warnings) == 1
+
+    # Connected but idle (no capture running).
+    class FakeWorker:
+        def send_command(self, cmd):
+            return cmd.get("id", "fake-id")
+
+    window.worker = FakeWorker()
+    window._ipc_connected = True
+    window._engine_state = "idle"
+    window.send_data()
+    assert len(warnings) == 2
 
 
 def test_main_window_settings_and_presets(qtbot):
@@ -92,13 +142,15 @@ def test_main_window_settings_and_presets(qtbot):
     # Select TCP Client mode
     window.mode_combo.setCurrentIndex(1)
     assert window.param_stack.currentIndex() == 1
-    assert "tcp-client" in window.cli_args_edit.text()
+    assert '"mode": "tcp-client"' in window.config_preview_edit.text()
 
     # Modify Remote Host in TCP Client mode
     window.tcp_cli_host.setText("192.168.1.100")
     window.tcp_cli_port.setText("8080")
     # Verify the read-only preview updates dynamically
-    assert "tcp-client --host 192.168.1.100 --port 8080" in window.cli_args_edit.text()
+    preview = json.loads(window.config_preview_edit.text())
+    assert preview["host"] == "192.168.1.100"
+    assert preview["port"] == 8080
 
     # 2. Verify QSettings persistence (save and load)
     # Modify settings values
@@ -109,10 +161,10 @@ def test_main_window_settings_and_presets(qtbot):
 
     # Change to Serial mode and customize parameters
     window.mode_combo.setCurrentIndex(4) # Serial
-    window.ser_port.setText("/dev/ttyACM0")
+    window.ser_port.setCurrentText("/dev/ttyACM0")
     window.ser_baud.setCurrentText("9600")
     window.log_file_edit.setText("serial_test.jsonl")
-    window.extra_args_edit.setText("--hex")
+    window.log_file_cb.setChecked(True)
 
     # Save settings
     window.save_settings()
@@ -129,9 +181,13 @@ def test_main_window_settings_and_presets(qtbot):
 
     # Assert new window restored Serial mode and fields
     assert new_window.mode_combo.currentIndex() == 4
-    assert new_window.ser_port.text() == "/dev/ttyACM0"
+    assert new_window.ser_port.currentText() == "/dev/ttyACM0"
     assert new_window.ser_baud.currentText() == "9600"
     assert new_window.log_file_edit.text() == "serial_test.jsonl"
-    assert new_window.extra_args_edit.text() == "--hex"
-    # Verify generated args preview was loaded correctly
-    assert "serial --port /dev/ttyACM0 --baudrate 9600 --log serial_test.jsonl --hex" in new_window.cli_args_edit.text()
+    assert new_window.log_file_cb.isChecked() is True
+    # Verify generated config preview was loaded correctly
+    preview = json.loads(new_window.config_preview_edit.text())
+    assert preview["mode"] == "serial"
+    assert preview["serial_port"] == "/dev/ttyACM0"
+    assert preview["baudrate"] == 9600
+    assert preview["log_path"] == "serial_test.jsonl"

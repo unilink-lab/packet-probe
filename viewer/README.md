@@ -3,8 +3,12 @@
 Packet Probe Viewer is an optional viewer for Packet Probe event streams.
 
 The viewer subscribes to Packet Probe's UDS IPC stream and displays
-JSONL events in a table, hex view, and detail panel. It can also send commands
-back to the CLI over the same socket.
+JSONL events in a table, hex view, and detail panel. It drives capture through
+`packet-probe`'s long-lived `engine` mode (see
+[docs/ipc-protocol.md](../docs/ipc-protocol.md), "Control Protocol v2"): the
+viewer sends `configure`/`start_capture`/`stop_capture`/`send` commands over IPC
+instead of assembling CLI argv strings, so changing capture settings does not
+require restarting the `packet-probe` process.
 
 ## Install
 
@@ -36,30 +40,34 @@ python -m pip install -e ".[test]"
 python -m pytest
 ```
 
-## Connect to an existing Packet Probe process
+## Attach to an already-running engine
 
-Use this when `packet-probe` is already running with `--ipc`.
+Use this when `packet-probe engine --ipc <path>` is already running.
 
 ```sh
-packet-probe udp --bind-host 127.0.0.1 --bind-port 19000 --ipc /tmp/packet-probe.sock
-packet-probe-viewer --socket /tmp/packet-probe.sock
+packet-probe engine --ipc /tmp/packet-probe.sock
 ```
 
-## Launch Packet Probe from the viewer
+In the viewer, set `Socket Path` to the same path and click `Attach`. The viewer
+syncs with whatever the engine is currently doing (idle or capturing) via
+`get_status`, and can then `configure`/`start_capture`/`stop_capture` it like any
+other connection.
 
-Use this when you want the viewer to start `packet-probe` for you.
+## Launch the engine from the viewer
 
-Do not include `--ipc` or `--ipc=` in the args field. The viewer generates and appends it automatically.
+Use this when you want the viewer to start `packet-probe engine` for you - the
+default flow.
 
-1. Set `CLI Path` to the `packet-probe` executable.
-2. Enter capture arguments.
+1. Set `CLI Path` to the `packet-probe` executable (auto-detected if it's on `PATH`
+   or in a sibling `build/` directory).
+2. Choose a mode and fill in its fields (bind/target host and port, serial port and
+   baud rate, etc.) and optional frame decoder settings.
 3. Click `Start Capture`.
 
-Example args:
-
-```text
-udp --bind-host 127.0.0.1 --bind-port 19000 --log udp.jsonl
-```
+The viewer spawns `packet-probe engine --ipc <generated path>`, connects, sends
+`configure` with the fields from step 2, then `start_capture`. Changing fields and
+clicking `Start Capture` again after `Stop Capture` reconfigures and restarts the
+capture session without spawning a new process.
 
 ## Open a JSONL log
 
@@ -84,15 +92,17 @@ or the `Open Log` button.
 
 Packet Probe Viewer follows a compact desktop communication-tool layout.
 
-- Top controls: CLI path, capture arguments, IPC socket, and action buttons
+- Top controls: CLI path, capture mode/fields, decoder settings, IPC socket, config
+  preview, and action buttons
 - Center view: live or offline event table
 - Bottom tabs: Hex, JSON detail, and Process Log
 
 ## Send Command
 
-When connected via IPC, the Send Message panel in the viewer sends a hex payload
-to the connected device. This uses the IPC `send` command and works in tcp-client,
-tcp-server, serial, and udp modes. TCP proxy mode does not support send.
+Send is always over IPC, using the same command/result protocol as
+configure/start_capture/stop_capture (see docs/ipc-protocol.md). Sending requires an
+active connection and a capturing engine; it works in tcp-client, tcp-server, serial,
+and udp modes. TCP proxy mode does not support send.
 
 ## Limitations
 
@@ -100,4 +110,4 @@ tcp-server, serial, and udp modes. TCP proxy mode does not support send.
 - Unix Domain Socket IPC only for now
 - viewer currently keeps events in memory
 - very large captures should be recorded as JSONL and analyzed separately
-- capture start/stop control not implemented yet
+- filter subscription and snapshot requests not implemented yet

@@ -30,9 +30,8 @@ class ViewerState:
     dec_len_size: str = "2"
     dec_len_endian: str = "big"
     dec_len_inc_hdr: bool = False
-    settings_visible: bool = True
-    log_file: str = "udp.jsonl"
-    extra_args: str = ""
+    log_file: str = "capture.jsonl"
+    log_enabled: bool = False
 
 
 class ViewerSettingsManager:
@@ -68,9 +67,8 @@ class ViewerSettingsManager:
             dec_len_size=s.value("dec_len_size", defaults.dec_len_size),
             dec_len_endian=s.value("dec_len_endian", defaults.dec_len_endian),
             dec_len_inc_hdr=s.value("dec_len_inc_hdr", "false") == "true",
-            settings_visible=s.value("settings_visible", "true") == "true",
             log_file=s.value("log_file", defaults.log_file),
-            extra_args=s.value("extra_args", defaults.extra_args),
+            log_enabled=s.value("log_enabled", "false") == "true",
         )
 
     def save(self, state: ViewerState) -> None:
@@ -101,6 +99,5 @@ class ViewerSettingsManager:
         s.setValue("dec_len_size", state.dec_len_size)
         s.setValue("dec_len_endian", state.dec_len_endian)
         s.setValue("dec_len_inc_hdr", "true" if state.dec_len_inc_hdr else "false")
-        s.setValue("settings_visible", "true" if state.settings_visible else "false")
         s.setValue("log_file", state.log_file)
-        s.setValue("extra_args", state.extra_args)
+        s.setValue("log_enabled", "true" if state.log_enabled else "false")

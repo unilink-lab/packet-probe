@@ -23,19 +23,13 @@ class CaptureProcess(QObject):
             self._process.setWorkingDirectory(working_dir)
         self._process.start(executable, args)
 
-    def write_stdin(self, data: bytes) -> int:
-        if self.is_running():
-            bytes_written = self._process.write(data)
-            self._process.waitForBytesWritten(100)
-            return bytes_written
-        return 0
-
     def stop(self, timeout_ms: int = 3000) -> None:
         if self._process.state() == QProcess.ProcessState.NotRunning:
             return
 
-        # Close stdin write channel to send EOF to the child process's stdin.
-        # This unblocks C++ std::getline() and allows the CLI to exit cleanly with code 0.
+        # The engine (packet-probe engine --ipc ...) doesn't read stdin; it exits on
+        # SIGTERM via terminate() below. closeWriteChannel() is a harmless no-op here,
+        # kept for parity with QProcess children that do read stdin.
         self._process.closeWriteChannel()
         self._process.terminate()
         if not self._process.waitForFinished(timeout_ms):

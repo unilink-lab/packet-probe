@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -6,19 +7,19 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
     QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton, QStackedWidget,
-    QSpinBox, QCheckBox, QGridLayout
+    QSpinBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer, QSettings
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIntValidator
 from .ipc_client import IpcClientWorker
 from .event_model import PacketEvent
-from .packet_table_model import PacketTableModel
+from .packet_table_model import PacketTableModel, PacketFilterProxyModel
 from .widgets.hex_view import HexView
 from .widgets.event_detail import EventDetailView
 from .jsonl_log_loader import load_packet_probe_jsonl
 from .ipc_path import make_default_ipc_path, resolve_initial_socket_path
 from .capture_process import CaptureProcess
-from .capture_command import build_capture_command
+from .capture_command import build_capture_config, build_decoder_config, engine_mode_for_ui, supports_send
 from .styles import DARK_THEME_QSS
 from .viewer_settings import ViewerState, ViewerSettingsManager
 from .ipc_connector import IpcConnector
@@ -73,10 +74,26 @@ class MainWindow(QMainWindow):
         self._ipc_connected = False
         self._active_capture_mode = ""
 
-        self.active_send_mode: str = "hex"
+        # Engine control protocol v2 state (see docs/ipc-protocol.md). Once connected,
+        # the viewer drives capture entirely through configure/start_capture/
+        # stop_capture commands rather than process spawn/kill, so a config change no
+        # longer requires restarting the packet-probe process.
+        self._engine_state = "idle"
+        # command id -> intent, so on_result_received can react per-command
+        # ("configure", "start_capture", "stop_capture", "send").
+        self._pending_commands: dict[str, str] = {}
+        # True once the viewer itself has issued start_capture and is waiting for
+        # engine confirmation; distinguishes "we're starting" from "someone else's
+        # capture is already running" when a status broadcast arrives.
+        self._starting_capture = False
+        # Config queued by start_capture() while we wait for the engine
+        # process/connection to come up, applied once on_status_changed("connected") fires.
+        self._pending_config_to_start: dict | None = None
 
         self.is_paused = False
         self.pending_events: list[PacketEvent] = []
+        self._event_count = 0
+        self._error_count = 0
 
         self.setup_ui()
         self._settings_manager = ViewerSettingsManager(settings_org, settings_app)
@@ -125,24 +142,10 @@ class MainWindow(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_all)
         action_btn_layout.addWidget(self.clear_btn)
 
-        action_btn_layout.addSpacing(20)
-        self.status_label = QLabel(self)
-        action_btn_layout.addWidget(self.status_label)
-
-        self.state_label = QLabel(self)
-        action_btn_layout.addWidget(self.state_label)
-
-        self.conn_mode_label = QLabel(self)
-        action_btn_layout.addWidget(self.conn_mode_label)
-
-        self.port_label = QLabel(self)
-        action_btn_layout.addWidget(self.port_label)
         action_btn_layout.addStretch()
 
         self.toggle_settings_btn = QPushButton("⚙️ Settings", self)
-        self.toggle_settings_btn.setCheckable(True)
-        self.toggle_settings_btn.setChecked(True)
-        self.toggle_settings_btn.clicked.connect(self.toggle_settings_visibility)
+        self.toggle_settings_btn.clicked.connect(self.open_settings_dialog)
         action_btn_layout.addWidget(self.toggle_settings_btn)
 
         top_control_layout.addLayout(action_btn_layout)
@@ -168,6 +171,11 @@ class MainWindow(QMainWindow):
         mode_layout.addStretch()
         left_layout.addLayout(mode_layout)
 
+        self.mode_help_label = QLabel(self)
+        self.mode_help_label.setWordWrap(True)
+        self.mode_help_label.setStyleSheet("color: #9ca3af; font-style: italic;")
+        left_layout.addWidget(self.mode_help_label)
+
         # Parameter Stacked Widget
         self.param_stack = QStackedWidget(self)
         left_layout.addWidget(self.param_stack)
@@ -179,19 +187,21 @@ class MainWindow(QMainWindow):
         udp_grid.setSpacing(6)
         udp_grid.addWidget(QLabel("Bind Host:", self), 0, 0)
         self.udp_bind_host = QLineEdit("0.0.0.0", self)
-        self.udp_bind_host.textChanged.connect(self.update_generated_args)
+        self.udp_bind_host.textChanged.connect(self.update_config_preview)
         udp_grid.addWidget(self.udp_bind_host, 0, 1)
         udp_grid.addWidget(QLabel("Bind Port:", self), 0, 2)
         self.udp_bind_port = QLineEdit("19000", self)
-        self.udp_bind_port.textChanged.connect(self.update_generated_args)
+        self.udp_bind_port.setValidator(QIntValidator(1, 65535, self))
+        self.udp_bind_port.textChanged.connect(self.update_config_preview)
         udp_grid.addWidget(self.udp_bind_port, 0, 3)
         udp_grid.addWidget(QLabel("Target Host:", self), 1, 0)
         self.udp_target_host = QLineEdit("127.0.0.1", self)
-        self.udp_target_host.textChanged.connect(self.update_generated_args)
+        self.udp_target_host.textChanged.connect(self.update_config_preview)
         udp_grid.addWidget(self.udp_target_host, 1, 1)
         udp_grid.addWidget(QLabel("Target Port:", self), 1, 2)
         self.udp_target_port = QLineEdit("19085", self)
-        self.udp_target_port.textChanged.connect(self.update_generated_args)
+        self.udp_target_port.setValidator(QIntValidator(1, 65535, self))
+        self.udp_target_port.textChanged.connect(self.update_config_preview)
         udp_grid.addWidget(self.udp_target_port, 1, 3)
         self.param_stack.addWidget(udp_widget)
 
@@ -202,11 +212,12 @@ class MainWindow(QMainWindow):
         tcp_client_grid.setSpacing(6)
         tcp_client_grid.addWidget(QLabel("Remote Host:", self), 0, 0)
         self.tcp_cli_host = QLineEdit("127.0.0.1", self)
-        self.tcp_cli_host.textChanged.connect(self.update_generated_args)
+        self.tcp_cli_host.textChanged.connect(self.update_config_preview)
         tcp_client_grid.addWidget(self.tcp_cli_host, 0, 1)
         tcp_client_grid.addWidget(QLabel("Remote Port:", self), 0, 2)
         self.tcp_cli_port = QLineEdit("19085", self)
-        self.tcp_cli_port.textChanged.connect(self.update_generated_args)
+        self.tcp_cli_port.setValidator(QIntValidator(1, 65535, self))
+        self.tcp_cli_port.textChanged.connect(self.update_config_preview)
         tcp_client_grid.addWidget(self.tcp_cli_port, 0, 3)
         self.param_stack.addWidget(tcp_client_widget)
 
@@ -217,11 +228,12 @@ class MainWindow(QMainWindow):
         tcp_server_grid.setSpacing(6)
         tcp_server_grid.addWidget(QLabel("Listen Host:", self), 0, 0)
         self.tcp_srv_host = QLineEdit("0.0.0.0", self)
-        self.tcp_srv_host.textChanged.connect(self.update_generated_args)
+        self.tcp_srv_host.textChanged.connect(self.update_config_preview)
         tcp_server_grid.addWidget(self.tcp_srv_host, 0, 1)
         tcp_server_grid.addWidget(QLabel("Listen Port:", self), 0, 2)
         self.tcp_srv_port = QLineEdit("19085", self)
-        self.tcp_srv_port.textChanged.connect(self.update_generated_args)
+        self.tcp_srv_port.setValidator(QIntValidator(1, 65535, self))
+        self.tcp_srv_port.textChanged.connect(self.update_config_preview)
         tcp_server_grid.addWidget(self.tcp_srv_port, 0, 3)
         self.param_stack.addWidget(tcp_server_widget)
 
@@ -232,19 +244,21 @@ class MainWindow(QMainWindow):
         tcp_proxy_grid.setSpacing(6)
         tcp_proxy_grid.addWidget(QLabel("Listen Host:", self), 0, 0)
         self.tcp_prx_listen_host = QLineEdit("127.0.0.1", self)
-        self.tcp_prx_listen_host.textChanged.connect(self.update_generated_args)
+        self.tcp_prx_listen_host.textChanged.connect(self.update_config_preview)
         tcp_proxy_grid.addWidget(self.tcp_prx_listen_host, 0, 1)
         tcp_proxy_grid.addWidget(QLabel("Listen Port:", self), 0, 2)
         self.tcp_prx_listen_port = QLineEdit("19000", self)
-        self.tcp_prx_listen_port.textChanged.connect(self.update_generated_args)
+        self.tcp_prx_listen_port.setValidator(QIntValidator(1, 65535, self))
+        self.tcp_prx_listen_port.textChanged.connect(self.update_config_preview)
         tcp_proxy_grid.addWidget(self.tcp_prx_listen_port, 0, 3)
         tcp_proxy_grid.addWidget(QLabel("Target Host:", self), 1, 0)
         self.tcp_prx_target_host = QLineEdit("127.0.0.1", self)
-        self.tcp_prx_target_host.textChanged.connect(self.update_generated_args)
+        self.tcp_prx_target_host.textChanged.connect(self.update_config_preview)
         tcp_proxy_grid.addWidget(self.tcp_prx_target_host, 1, 1)
         tcp_proxy_grid.addWidget(QLabel("Target Port:", self), 1, 2)
         self.tcp_prx_target_port = QLineEdit("19085", self)
-        self.tcp_prx_target_port.textChanged.connect(self.update_generated_args)
+        self.tcp_prx_target_port.setValidator(QIntValidator(1, 65535, self))
+        self.tcp_prx_target_port.textChanged.connect(self.update_config_preview)
         tcp_proxy_grid.addWidget(self.tcp_prx_target_port, 1, 3)
         self.param_stack.addWidget(tcp_proxy_widget)
 
@@ -254,9 +268,19 @@ class MainWindow(QMainWindow):
         serial_grid.setContentsMargins(0, 5, 0, 5)
         serial_grid.setSpacing(6)
         serial_grid.addWidget(QLabel("Port Path:", self), 0, 0)
-        self.ser_port = QLineEdit("/dev/ttyUSB0", self)
-        self.ser_port.textChanged.connect(self.update_generated_args)
+        self.ser_port = QComboBox(self)
+        self.ser_port.setEditable(True)
+        self.ser_port.addItem("/dev/ttyUSB0")
+        self.ser_port.setCurrentText("/dev/ttyUSB0")
+        self.ser_port.currentIndexChanged.connect(self.update_config_preview)
+        self.ser_port.editTextChanged.connect(self.update_config_preview)
         serial_grid.addWidget(self.ser_port, 0, 1)
+        self.ser_port_refresh_btn = QPushButton("Refresh", self)
+        self.ser_port_refresh_btn.setToolTip(
+            "Ask the connected engine to list available serial ports (list_serial_ports command)."
+        )
+        self.ser_port_refresh_btn.clicked.connect(self.refresh_serial_ports)
+        serial_grid.addWidget(self.ser_port_refresh_btn, 0, 4)
         serial_grid.addWidget(QLabel("Baud Rate:", self), 0, 2)
         self.ser_baud = QComboBox(self)
         self.ser_baud.setEditable(True)
@@ -265,8 +289,8 @@ class MainWindow(QMainWindow):
             "57600", "115200", "230400", "460800", "921600"
         ])
         self.ser_baud.setCurrentText("115200")
-        self.ser_baud.currentIndexChanged.connect(self.update_generated_args)
-        self.ser_baud.editTextChanged.connect(self.update_generated_args)
+        self.ser_baud.currentIndexChanged.connect(self.update_config_preview)
+        self.ser_baud.editTextChanged.connect(self.update_config_preview)
         serial_grid.addWidget(self.ser_baud, 0, 3)
         self.param_stack.addWidget(serial_widget)
 
@@ -306,7 +330,7 @@ class MainWindow(QMainWindow):
         self.dec_fixed_size = QSpinBox(self)
         self.dec_fixed_size.setRange(1, 1000000)
         self.dec_fixed_size.setValue(16)
-        self.dec_fixed_size.valueChanged.connect(self.update_generated_args)
+        self.dec_fixed_size.valueChanged.connect(self.update_config_preview)
         dec_fixed_layout.addWidget(self.dec_fixed_size)
         dec_fixed_layout.addStretch()
         self.decoder_param_stack.addWidget(dec_fixed_widget)
@@ -318,11 +342,11 @@ class MainWindow(QMainWindow):
         dec_delim_layout.addWidget(QLabel("Delimiter (Hex):", self))
         self.dec_delim_edit = QLineEdit("0A", self)
         self.dec_delim_edit.setPlaceholderText("e.g. 0A or 0D0A")
-        self.dec_delim_edit.textChanged.connect(self.update_generated_args)
+        self.dec_delim_edit.textChanged.connect(self.update_config_preview)
         dec_delim_layout.addWidget(self.dec_delim_edit)
         self.dec_delim_inc_cb = QCheckBox("Include Delimiter", self)
         self.dec_delim_inc_cb.setChecked(False)
-        self.dec_delim_inc_cb.toggled.connect(self.update_generated_args)
+        self.dec_delim_inc_cb.toggled.connect(self.update_config_preview)
         dec_delim_layout.addWidget(self.dec_delim_inc_cb)
         self.decoder_param_stack.addWidget(dec_delim_widget)
 
@@ -334,63 +358,58 @@ class MainWindow(QMainWindow):
         self.dec_len_size_combo = QComboBox(self)
         self.dec_len_size_combo.addItems(["1", "2", "4"])
         self.dec_len_size_combo.setCurrentText("2")
-        self.dec_len_size_combo.currentIndexChanged.connect(self.update_generated_args)
+        self.dec_len_size_combo.currentIndexChanged.connect(self.update_config_preview)
         dec_len_layout.addWidget(self.dec_len_size_combo)
 
         dec_len_layout.addWidget(QLabel("Endian:", self))
         self.dec_len_endian_combo = QComboBox(self)
         self.dec_len_endian_combo.addItems(["big", "little"])
         self.dec_len_endian_combo.setCurrentText("big")
-        self.dec_len_endian_combo.currentIndexChanged.connect(self.update_generated_args)
+        self.dec_len_endian_combo.currentIndexChanged.connect(self.update_config_preview)
         dec_len_layout.addWidget(self.dec_len_endian_combo)
 
         self.dec_len_inc_hdr_cb = QCheckBox("Includes Header", self)
         self.dec_len_inc_hdr_cb.setChecked(False)
-        self.dec_len_inc_hdr_cb.toggled.connect(self.update_generated_args)
+        self.dec_len_inc_hdr_cb.toggled.connect(self.update_config_preview)
         dec_len_layout.addWidget(self.dec_len_inc_hdr_cb)
         self.decoder_param_stack.addWidget(dec_len_widget)
 
         split_config_layout.addWidget(right_widget, 1)
         conn_layout.addLayout(split_config_layout)
 
-        # Common Row (Log File & Extra Args)
+        # Common Row (Log File - opt-in, off by default so a first run doesn't
+        # silently write a JSONL file the user didn't ask for)
         common_layout = QHBoxLayout()
-        common_layout.addWidget(QLabel("Log File:", self))
-        self.log_file_edit = QLineEdit("udp.jsonl", self)
-        self.log_file_edit.textChanged.connect(self.update_generated_args)
+        self.log_file_cb = QCheckBox("Record to JSONL:", self)
+        self.log_file_cb.setChecked(False)
+        self.log_file_cb.toggled.connect(self._on_log_file_toggled)
+        self.log_file_cb.toggled.connect(self.update_config_preview)
+        common_layout.addWidget(self.log_file_cb)
+        self.log_file_edit = QLineEdit("capture.jsonl", self)
+        self.log_file_edit.setEnabled(False)
+        self.log_file_edit.textChanged.connect(self.update_config_preview)
         common_layout.addWidget(self.log_file_edit)
-
-        common_layout.addWidget(QLabel("Extra Args:", self))
-        self.extra_args_edit = QLineEdit("", self)
-        self.extra_args_edit.setPlaceholderText("e.g. --latency")
-        self.extra_args_edit.textChanged.connect(self.update_generated_args)
-        common_layout.addWidget(self.extra_args_edit)
+        self.browse_log_btn = QPushButton("Browse", self)
+        self.browse_log_btn.setEnabled(False)
+        self.browse_log_btn.clicked.connect(self.browse_log_path)
+        common_layout.addWidget(self.browse_log_btn)
         conn_layout.addLayout(common_layout)
 
-        # System Paths Row (CLI Path & Socket Path)
-        paths_layout = QHBoxLayout()
-        paths_layout.addWidget(QLabel("CLI Path:", self))
+        # Advanced/developer-facing fields (engine executable path, IPC socket path,
+        # generated config preview) live in a separate Settings dialog rather than
+        # always-on-screen - see open_settings_dialog(). The widgets themselves stay
+        # attributes of MainWindow so the rest of the class can keep using them
+        # unchanged; only where they're placed in the layout changes.
         self.cli_path_edit = QLineEdit(self)
-        paths_layout.addWidget(self.cli_path_edit)
         self.browse_cli_btn = QPushButton("Browse", self)
         self.browse_cli_btn.clicked.connect(self.browse_cli_path)
-        paths_layout.addWidget(self.browse_cli_btn)
-
-        paths_layout.addWidget(QLabel("Socket Path:", self))
         self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
-        paths_layout.addWidget(self.socket_path_edit)
-        self.connect_btn = QPushButton("Connect", self)
+        self.connect_btn = QPushButton("Attach", self)
+        self.connect_btn.setToolTip("Attach to an already-running 'packet-probe engine' at this socket path.")
         self.connect_btn.clicked.connect(self.toggle_connection)
-        paths_layout.addWidget(self.connect_btn)
-        conn_layout.addLayout(paths_layout)
-
-        # Generated Args Row (Read-only preview)
-        preview_layout = QHBoxLayout()
-        preview_layout.addWidget(QLabel("Args Preview:", self))
-        self.cli_args_edit = QLineEdit(self)
-        self.cli_args_edit.setReadOnly(True)
-        preview_layout.addWidget(self.cli_args_edit)
-        conn_layout.addLayout(preview_layout)
+        self.config_preview_edit = QLineEdit(self)
+        self.config_preview_edit.setReadOnly(True)
+        self._build_settings_dialog()
 
         top_control_layout.addWidget(self.conn_group)
 
@@ -406,13 +425,38 @@ class MainWindow(QMainWindow):
         exit_action = file_menu.addAction("E&xit")
         exit_action.triggered.connect(self.close)
 
+        # Filter Bar (direction / event type / text search over the live event table)
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter:", self))
+        self.filter_direction_combo = QComboBox(self)
+        self.filter_direction_combo.addItem("All Directions", "all")
+        self.filter_direction_combo.addItem("App -> Device", "app_to_device")
+        self.filter_direction_combo.addItem("Device -> App", "device_to_app")
+        self.filter_direction_combo.currentIndexChanged.connect(self._on_filter_changed)
+        filter_layout.addWidget(self.filter_direction_combo)
+
+        self.filter_type_combo = QComboBox(self)
+        self.filter_type_combo.addItem("All Types", "all")
+        for event_type in ("raw_bytes", "frame", "latency", "error", "state_change"):
+            self.filter_type_combo.addItem(event_type, event_type)
+        self.filter_type_combo.currentIndexChanged.connect(self._on_filter_changed)
+        filter_layout.addWidget(self.filter_type_combo)
+
+        self.filter_text_edit = QLineEdit(self)
+        self.filter_text_edit.setPlaceholderText("Search summary/hex...")
+        self.filter_text_edit.textChanged.connect(self._on_filter_changed)
+        filter_layout.addWidget(self.filter_text_edit)
+        main_layout.addLayout(filter_layout)
+
         # Main Splitter
         main_splitter = QSplitter(Qt.Orientation.Vertical, self)
         main_layout.addWidget(main_splitter)
 
         self.table_model = PacketTableModel(self)
+        self.filter_proxy = PacketFilterProxyModel(self)
+        self.filter_proxy.setSourceModel(self.table_model)
         self.table_view = QTableView(self)
-        self.table_view.setModel(self.table_model)
+        self.table_view.setModel(self.filter_proxy)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -451,6 +495,9 @@ class MainWindow(QMainWindow):
         self.send_btn.clicked.connect(self.send_data)
         send_layout.addWidget(self.send_btn)
 
+        self.send_feedback_label = QLabel(self)
+        send_layout.addWidget(self.send_feedback_label)
+
         # Bottom Detail Tabs
         self.detail_tabs = QTabWidget(self)
 
@@ -480,6 +527,22 @@ class MainWindow(QMainWindow):
         self.message_label = QLabel("", self)
         main_layout.addWidget(self.message_label)
 
+        # Status Bar: consolidates the connection/capture/mode/port/counter indicators
+        # that used to be four separate QLabels crowding the action button row.
+        status_bar = self.statusBar()
+        self.status_label = QLabel(self)
+        status_bar.addWidget(self.status_label)
+        self.state_label = QLabel(self)
+        status_bar.addWidget(self.state_label)
+        self.conn_mode_label = QLabel(self)
+        status_bar.addWidget(self.conn_mode_label)
+        self.port_label = QLabel(self)
+        status_bar.addWidget(self.port_label)
+        self.event_count_label = QLabel("Events: 0", self)
+        status_bar.addPermanentWidget(self.event_count_label)
+        self.error_count_label = QLabel("Errors: 0", self)
+        status_bar.addPermanentWidget(self.error_count_label)
+
     # ── Connection management ──────────────────────────────────────────────
 
     def toggle_connection(self):
@@ -504,12 +567,15 @@ class MainWindow(QMainWindow):
         self.worker.error_occurred.connect(self.on_error_occurred)
         self.worker.event_received.connect(self.on_event_received)
         self.worker.metadata_received.connect(self.on_metadata_received)
+        self.worker.result_received.connect(self.on_result_received)
+        self.worker.status_received.connect(self.on_status_received)
         self.worker.disconnected.connect(self.on_worker_finished)
         self.worker.unilink_unavailable.connect(self.on_unilink_unavailable)
         self.worker.start()
 
     def disconnect_socket(self):
         self._ipc_connected = False
+        self._pending_commands.clear()
         if self._ipc_connector:
             self._ipc_connector.cancel()
             self._ipc_connector = None
@@ -519,37 +585,51 @@ class MainWindow(QMainWindow):
             worker.stop()
 
     def on_status_changed(self, status: str):
-        self.update_status(f"Status: {status}")
         if status == "connecting":
             self._ipc_connected = False
             self.connect_btn.setEnabled(False)
             self.connect_btn.setText("Connecting...")
             self._set_message("")
+            self.update_status("Status: connecting")
         elif status == "connected":
             self._ipc_connected = True
             self.connect_btn.setEnabled(True)
-            self.connect_btn.setText("Disconnect")
+            self.connect_btn.setText("Detach")
             self.socket_path_edit.setEnabled(False)
             self.clear_all()
-            self._set_message("Live mode started")
-            self._refresh_send_group_enabled(True)
-            if self.capture_process.is_running():
-                self.update_status("Status: capture running")
-                self.set_mode("launcher")
+            if self._starting_capture and self._pending_config_to_start is not None:
+                # We connected as part of our own Start Capture request - chain
+                # straight into configure/start_capture instead of settling on "live".
+                config = self._pending_config_to_start
+                self._pending_config_to_start = None
+                self._set_message("Connected to engine, configuring...")
+                self._configure_and_start(config)
             else:
-                self.update_status("Status: connected")
-                self.set_mode("live")
+                # A plain Attach (or a reconnect): sync UI with whatever the engine
+                # is actually doing rather than assuming idle.
+                self._set_message("Connected to engine")
+                self._request_status_sync()
         elif status == "disconnected":
             self._ipc_connected = False
             self.connect_btn.setEnabled(True)
-            self.connect_btn.setText("Connect")
+            self.connect_btn.setText("Attach")
             self.socket_path_edit.setEnabled(True)
+            self._pending_commands.clear()
             if not self.capture_process.is_running():
+                self._engine_state = "idle"
+                self._starting_capture = False
+                self._set_capture_controls_running(False)
                 self.set_mode("idle")
+                self.update_status("Status: disconnected")
 
     def on_error_occurred(self, error_msg: str):
         self._set_message(f"Error: {error_msg}", is_error=True)
         self.update_status("Status: failed")
+        self._bump_error_count()
+
+    def _bump_error_count(self):
+        self._error_count += 1
+        self.error_count_label.setText(f"Errors: {self._error_count}")
 
     def on_unilink_unavailable(self, message: str):
         # Unlike a transient IPC error, this never resolves on its own: the CLI process
@@ -576,6 +656,10 @@ class MainWindow(QMainWindow):
 
     def on_event_received(self, event_dict: dict):
         event = PacketEvent(event_dict)
+        self._event_count += 1
+        self.event_count_label.setText(f"Events: {self._event_count}")
+        if event.type == "error":
+            self._bump_error_count()
         if self.is_paused:
             self.pending_events.append(event)
         else:
@@ -702,50 +786,159 @@ class MainWindow(QMainWindow):
                 f"{self._active_capture_mode} mode forwards traffic between an existing client and "
                 "target; it does not support sending messages from the viewer."
             )
+        elif not active:
+            self.send_group.setToolTip("Start a capture session before sending.")
         else:
             self.send_group.setToolTip("")
+        self.send_feedback_label.clear()
+
+    def _show_send_feedback(self, ok: bool, error: str):
+        if ok:
+            self.send_feedback_label.setText("✓ Sent")
+            self.send_feedback_label.setStyleSheet("color: #34d399;")
+        else:
+            self.send_feedback_label.setText(f"✗ {error or 'Send failed'}")
+            self.send_feedback_label.setStyleSheet("color: #fca5a5;")
+        QTimer.singleShot(4000, self.send_feedback_label.clear)
 
     def _set_capture_controls_running(self, running: bool):
-        self.start_capture_btn.setEnabled(not running)
+        self.start_capture_btn.setEnabled(not running and not self._starting_capture)
         self.stop_capture_btn.setEnabled(running)
-        self.cli_path_edit.setEnabled(not running)
-        self.browse_cli_btn.setEnabled(not running)
         self.conn_group.setEnabled(not running)
         self._refresh_send_group_enabled(running)
 
     def _restore_capture_controls(self):
+        self._starting_capture = False
         self._set_capture_controls_running(False)
 
-    def start_capture(self):
-        executable = self.cli_path_edit.text().strip()
-        if not executable:
-            QMessageBox.warning(self, "Warning", "CLI Path is empty.")
-            return
+    # ── Engine control protocol v2 (configure/start_capture/stop_capture) ──
 
-        resolved_path = shutil.which(executable)
-        if not resolved_path:
+    def _configure_and_start(self, config: dict):
+        cmd_id = self.worker.send_command({"type": "command", "command": "configure", "config": config})
+        self._pending_commands[cmd_id] = "configure"
+
+    def _request_status_sync(self):
+        if self.worker is None:
+            return
+        cmd_id = self.worker.send_command({"type": "command", "command": "get_status"})
+        self._pending_commands[cmd_id] = "get_status"
+
+    def _apply_engine_state(self, engine_state: str):
+        self._engine_state = engine_state
+        capturing = engine_state == "capturing"
+        self._set_capture_controls_running(capturing)
+        self.set_mode("live" if capturing else "idle")
+        self.update_status("Status: capturing" if capturing else "Status: connected")
+
+    def on_result_received(self, result: dict):
+        cmd_id = result.get("id", "")
+        intent = self._pending_commands.pop(cmd_id, None)
+        ok = bool(result.get("ok", False))
+        error = result.get("error", "")
+
+        if intent == "configure":
+            if ok:
+                self._set_message("Configured, starting capture...")
+                start_id = self.worker.send_command({"type": "command", "command": "start_capture"})
+                self._pending_commands[start_id] = "start_capture"
+            else:
+                self._restore_capture_controls()
+                self._set_message(f"Error: configure failed: {error}", is_error=True)
+                QMessageBox.warning(self, "Configure Failed", error or "Unknown error")
+        elif intent == "start_capture":
+            self._starting_capture = False
+            if ok:
+                self._apply_engine_state("capturing")
+                self._set_message("Capture started")
+            else:
+                self._set_capture_controls_running(False)
+                self._set_message(f"Error: start_capture failed: {error}", is_error=True)
+                QMessageBox.warning(self, "Start Capture Failed", error or "Unknown error")
+        elif intent == "stop_capture":
+            self._apply_engine_state("idle" if ok else self._engine_state)
+            if ok:
+                self._set_message("Capture stopped")
+            else:
+                self._set_message(f"Error: stop_capture failed: {error}", is_error=True)
+        elif intent == "get_status":
+            if ok:
+                self._apply_engine_state(result.get("engine_state", "idle"))
+            self._set_message("" if ok else f"Error: get_status failed: {error}", is_error=not ok)
+        elif intent == "send":
+            self._set_message("Sent" if ok else f"Error: send failed: {error}", is_error=not ok)
+            self._show_send_feedback(ok, error)
+        elif intent == "list_serial_ports":
+            self.ser_port_refresh_btn.setEnabled(True)
+            if ok:
+                current = self.ser_port.currentText()
+                ports = result.get("ports", [])
+                self.ser_port.clear()
+                self.ser_port.addItems(ports)
+                if current:
+                    self.ser_port.setCurrentText(current)
+                self._set_message(f"Found {len(ports)} serial port(s)" if ports else "No serial ports found")
+            else:
+                self._set_message(f"Error: list_serial_ports failed: {error}", is_error=True)
+
+    def refresh_serial_ports(self):
+        if not (self._ipc_connected and self.worker is not None):
             QMessageBox.warning(
-                self,
-                "Warning",
-                f"CLI executable not found or not executable:\n{executable}"
+                self, "Warning", "Not connected to an engine yet - click Start Capture or Attach first."
             )
             return
+        self.ser_port_refresh_btn.setEnabled(False)
+        cmd_id = self.worker.send_command({"type": "command", "command": "list_serial_ports"})
+        self._pending_commands[cmd_id] = "list_serial_ports"
 
-        args_text = self.cli_args_edit.text().strip()
-        self._active_capture_mode = self.mode_combo.currentText()
+    def on_status_received(self, status: dict):
+        # Broadcast to all clients on every engine state change (see docs/ipc-protocol.md).
+        # Ignore it while we have our own configure/start_capture in flight so we don't
+        # show a stale state in between our own request and its result.
+        if self._starting_capture:
+            return
+        self._apply_engine_state(status.get("engine_state", self._engine_state))
 
-        self.generated_ipc_path = make_default_ipc_path()
-        self.socket_path_edit.setText(self.generated_ipc_path)
+    # ── Capture lifecycle ────────────────────────────────────────────────
 
+    def start_capture(self):
         try:
-            cmd = build_capture_command(executable, args_text, self.generated_ipc_path)
-            self.active_send_mode = cmd.send_mode
+            config = self._collect_capture_config()
         except ValueError as exc:
             QMessageBox.warning(self, "Warning", str(exc))
             return
 
-        if self.worker and self.worker.isRunning():
-            self.disconnect_socket()
+        self._active_capture_mode = self.mode_combo.currentText()
+        self._starting_capture = True
+        self._set_capture_controls_running(False)
+        self.set_mode("launcher")
+        self.update_status("Status: launching")
+
+        if self._ipc_connected and self.worker is not None:
+            self._configure_and_start(config)
+            return
+
+        self._pending_config_to_start = config
+
+        if self.capture_process.is_running():
+            # Engine process is already up but we're not connected - just (re)connect;
+            # on_status_changed("connected") will pick up _pending_config_to_start.
+            self.connect_socket()
+            return
+
+        executable = self.cli_path_edit.text().strip()
+        if not executable:
+            QMessageBox.warning(self, "Warning", "CLI Path is empty.")
+            self._restore_capture_controls()
+            return
+
+        resolved_path = shutil.which(executable)
+        if not resolved_path:
+            QMessageBox.warning(self, "Warning", f"CLI executable not found or not executable:\n{executable}")
+            self._restore_capture_controls()
+            return
+
+        self.generated_ipc_path = make_default_ipc_path()
+        self.socket_path_edit.setText(self.generated_ipc_path)
 
         self.clear_all()
         self.process_output.clear()
@@ -756,27 +949,32 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        self.process_output.appendPlainText(f"[system] Starting CLI: {cmd.executable} " + " ".join(cmd.args))
-        self._set_capture_controls_running(True)
-        self.set_mode("launcher")
-        self.update_status("Status: launching")
+        self.process_output.appendPlainText(f"[system] Starting engine: {executable} engine --ipc {self.generated_ipc_path}")
 
         try:
-            self.capture_process.start(cmd.executable, cmd.args)
+            self.capture_process.start(executable, ["engine", "--ipc", self.generated_ipc_path])
         except Exception as exc:
             self.process_output.appendPlainText(f"[system] Failed to start process: {exc}")
             self.on_capture_stopped(-1, "FailedToStart")
 
     def stop_capture(self):
+        if self._ipc_connected and self.worker is not None:
+            self.stop_capture_btn.setEnabled(False)
+            cmd_id = self.worker.send_command({"type": "command", "command": "stop_capture"})
+            self._pending_commands[cmd_id] = "stop_capture"
+            return
+
+        # No IPC connection to send stop_capture over (e.g. the engine hung before
+        # ever accepting a connection) - fall back to killing the process outright.
         if self._ipc_connector:
             self._ipc_connector.cancel()
             self._ipc_connector = None
-        self.process_output.appendPlainText("[system] Stopping CLI process...")
+        self.process_output.appendPlainText("[system] Stopping engine process...")
         self.capture_process.stop()
-        self.disconnect_socket()
+        self._restore_capture_controls()
 
     def on_capture_started(self):
-        self.process_output.appendPlainText("[system] CLI process started successfully.")
+        self.process_output.appendPlainText("[system] Engine process started successfully.")
         self._ipc_connector = IpcConnector(
             self.generated_ipc_path,
             max_attempts=30,
@@ -793,6 +991,7 @@ class MainWindow(QMainWindow):
 
     def _on_ipc_socket_failed(self, reason: str):
         self._ipc_connector = None
+        self._pending_config_to_start = None
         self._set_message(f"Error: {reason}", is_error=True)
         self.stop_capture()
         self._restore_capture_controls()
@@ -803,7 +1002,8 @@ class MainWindow(QMainWindow):
         if self._ipc_connector:
             self._ipc_connector.cancel()
             self._ipc_connector = None
-        self.process_output.appendPlainText(f"[system] CLI process stopped. Exit code: {exit_code} ({exit_status})")
+        self._pending_config_to_start = None
+        self.process_output.appendPlainText(f"[system] Engine process stopped. Exit code: {exit_code} ({exit_status})")
         self._restore_capture_controls()
         self.disconnect_socket()
         self.set_mode("idle")
@@ -815,6 +1015,7 @@ class MainWindow(QMainWindow):
             if self._ipc_connector:
                 self._ipc_connector.cancel()
                 self._ipc_connector = None
+            self._pending_config_to_start = None
             self._restore_capture_controls()
             self.disconnect_socket()
             self.set_mode("idle")
@@ -850,6 +1051,15 @@ class MainWindow(QMainWindow):
         self.hex_view.clear()
         self.text_view.clear()
         self.detail_view.clear()
+        self._event_count = 0
+        self._error_count = 0
+        self.event_count_label.setText("Events: 0")
+        self.error_count_label.setText("Errors: 0")
+
+    def _on_filter_changed(self):
+        self.filter_proxy.set_direction_filter(self.filter_direction_combo.currentData())
+        self.filter_proxy.set_type_filter(self.filter_type_combo.currentData())
+        self.filter_proxy.set_text_filter(self.filter_text_edit.text())
 
     def on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
         indexes = selected.indexes()
@@ -859,8 +1069,8 @@ class MainWindow(QMainWindow):
             self.detail_view.clear()
             return
 
-        row = indexes[0].row()
-        event = self.table_model.event_at(row)
+        source_index = self.filter_proxy.mapToSource(indexes[0])
+        event = self.table_model.event_at(source_index.row())
         if event:
             self.hex_view.set_payload_hex(event.payload_hex)
             self.detail_view.set_event(event)
@@ -968,89 +1178,40 @@ class MainWindow(QMainWindow):
         return clean_hex
 
     def send_data(self):
-        can_send_via_ipc = self._ipc_connected and self.worker is not None
-        can_send_via_stdin = self.capture_process.is_running()
-
-        if not can_send_via_ipc and not can_send_via_stdin:
-            QMessageBox.warning(self, "Warning", "Cannot send data: no active IPC connection or CLI process.")
+        if not (self._ipc_connected and self.worker is not None):
+            QMessageBox.warning(self, "Warning", "Cannot send data: not connected to the engine.")
+            return
+        if self._engine_state != "capturing":
+            QMessageBox.warning(self, "Warning", "Cannot send data: capture is not running.")
             return
 
         text = self.send_input.text().strip()
         if not text:
             return
 
-        is_gui_hex = self.hex_radio.isChecked()
-        is_cli_hex = self.active_send_mode == "hex"
-
-        if can_send_via_ipc:
-            # Prefer IPC channel: resolve hex bytes and send as {"command":"send","payload_hex":"..."}
-            if is_gui_hex:
-                clean_hex = self._clean_hex_input(text)
-                if clean_hex is None:
-                    return
-                payload_hex = clean_hex
-            else:
-                eol_idx = self.eol_combo.currentIndex()
-                raw = text
-                if eol_idx == 1:
-                    raw += "\n"
-                elif eol_idx == 2:
-                    raw += "\r"
-                elif eol_idx == 3:
-                    raw += "\r\n"
-                try:
-                    payload_hex = raw.encode("utf-8").hex()
-                except Exception as exc:
-                    QMessageBox.critical(self, "Error", f"Failed to encode text: {exc}")
-                    return
-            self.worker.send_command({"type": "command", "command": "send", "payload_hex": payload_hex})
-            self.send_input.clear()
-            return
-
-        if is_cli_hex:
-            if is_gui_hex:
-                clean_hex = self._clean_hex_input(text)
-                if clean_hex is None:
-                    return
-                write_payload = clean_hex + "\n"
-            else:
-                eol_idx = self.eol_combo.currentIndex()
-                if eol_idx == 1:
-                    text += "\n"
-                elif eol_idx == 2:
-                    text += "\r"
-                elif eol_idx == 3:
-                    text += "\r\n"
-                try:
-                    write_payload = text.encode("utf-8").hex() + "\n"
-                except Exception as exc:
-                    QMessageBox.critical(self, "Error", f"Failed to encode text to hex bytes: {exc}")
-                    return
-        else:
-            if is_gui_hex:
-                QMessageBox.warning(
-                    self,
-                    "Incompatible Mode",
-                    "No IPC connection is active, so this falls back to CLI stdin, which was "
-                    "launched in --send-text mode and cannot receive raw hex bytes.\n"
-                    "Reconnect via IPC to send hex regardless of this flag, or remove "
-                    "'--send-text' from Extra Args and restart capture."
-                )
+        if self.hex_radio.isChecked():
+            clean_hex = self._clean_hex_input(text)
+            if clean_hex is None:
                 return
+            payload_hex = clean_hex
+        else:
             eol_idx = self.eol_combo.currentIndex()
+            raw = text
             if eol_idx == 1:
-                text += "\n"
+                raw += "\n"
             elif eol_idx == 2:
-                text += "\r"
+                raw += "\r"
             elif eol_idx == 3:
-                text += "\r\n"
-            write_payload = text + "\n"
+                raw += "\r\n"
+            try:
+                payload_hex = raw.encode("utf-8").hex()
+            except Exception as exc:
+                QMessageBox.critical(self, "Error", f"Failed to encode text: {exc}")
+                return
 
-        try:
-            self.capture_process.write_stdin(write_payload.encode("utf-8"))
-            self.send_input.clear()
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to send data: {exc}")
+        cmd_id = self.worker.send_command({"type": "command", "command": "send", "payload_hex": payload_hex})
+        self._pending_commands[cmd_id] = "send"
+        self.send_input.clear()
 
     # ── Settings ──────────────────────────────────────────────────────────
 
@@ -1082,7 +1243,7 @@ class MainWindow(QMainWindow):
         self.tcp_prx_listen_port.setText(state.tcp_prx_listen_port)
         self.tcp_prx_target_host.setText(state.tcp_prx_target_host)
         self.tcp_prx_target_port.setText(state.tcp_prx_target_port)
-        self.ser_port.setText(state.ser_port)
+        self.ser_port.setCurrentText(state.ser_port)
         self.ser_baud.setCurrentText(state.ser_baud)
 
         self.decoder_combo.setCurrentIndex(state.decoder_index)
@@ -1093,12 +1254,15 @@ class MainWindow(QMainWindow):
         self.dec_len_size_combo.setCurrentText(state.dec_len_size)
         self.dec_len_endian_combo.setCurrentText(state.dec_len_endian)
         self.dec_len_inc_hdr_cb.setChecked(state.dec_len_inc_hdr)
-        self.toggle_settings_btn.setChecked(state.settings_visible)
-        self.conn_group.setVisible(state.settings_visible)
         self.log_file_edit.setText(state.log_file)
-        self.extra_args_edit.setText(state.extra_args)
+        self.log_file_cb.setChecked(state.log_enabled)
 
-        self.update_generated_args()
+        # setCurrentIndex() above only fires on_mode_changed (and its help-text update)
+        # if the index actually changed - call it explicitly so a saved/default mode of
+        # 0 (UDP) still gets its help text populated.
+        self.mode_help_label.setText(self._MODE_HELP_TEXT.get(self.mode_combo.currentText(), ""))
+
+        self.update_config_preview()
 
     def save_settings(self):
         state = ViewerState(
@@ -1119,7 +1283,7 @@ class MainWindow(QMainWindow):
             tcp_prx_listen_port=self.tcp_prx_listen_port.text().strip(),
             tcp_prx_target_host=self.tcp_prx_target_host.text().strip(),
             tcp_prx_target_port=self.tcp_prx_target_port.text().strip(),
-            ser_port=self.ser_port.text().strip(),
+            ser_port=self.ser_port.currentText().strip(),
             ser_baud=self.ser_baud.currentText().strip(),
             decoder_index=self.decoder_combo.currentIndex(),
             dec_fixed_size=self.dec_fixed_size.value(),
@@ -1128,18 +1292,26 @@ class MainWindow(QMainWindow):
             dec_len_size=self.dec_len_size_combo.currentText(),
             dec_len_endian=self.dec_len_endian_combo.currentText(),
             dec_len_inc_hdr=self.dec_len_inc_hdr_cb.isChecked(),
-            settings_visible=self.toggle_settings_btn.isChecked(),
             log_file=self.log_file_edit.text().strip(),
-            extra_args=self.extra_args_edit.text().strip(),
+            log_enabled=self.log_file_cb.isChecked(),
         )
         self._settings_manager.save(state)
 
     # ── Mode / decoder combo handlers ────────────────────────────────────
 
+    _MODE_HELP_TEXT = {
+        "UDP": "Binds a local UDP socket and inspects datagrams to/from an optional target.",
+        "TCP Client": "Connects directly to a TCP server device and inspects the traffic.",
+        "TCP Server": "Listens for one incoming TCP client connection and inspects the traffic.",
+        "TCP Proxy": "Sits between an existing client and a target device, forwarding traffic both ways (no Send).",
+        "Serial": "Connects directly to a serial (COM/tty) target device.",
+    }
+
     def on_mode_changed(self, index: int):
         self.param_stack.setCurrentIndex(index)
         mode = self.mode_combo.currentText()
         self.update_conn_mode(mode)
+        self.mode_help_label.setText(self._MODE_HELP_TEXT.get(mode, ""))
         if mode == "UDP":
             self.log_file_edit.setText("udp.jsonl")
         elif mode == "TCP Client":
@@ -1150,81 +1322,66 @@ class MainWindow(QMainWindow):
             self.log_file_edit.setText("tcp_proxy.jsonl")
         elif mode == "Serial":
             self.log_file_edit.setText("serial.jsonl")
-        self.update_generated_args()
+        self.update_config_preview()
 
-    def update_generated_args(self):
+    def _collect_capture_config(self) -> dict:
+        """Builds the "config" object for a "configure" command from the current
+        form values. Raises ValueError (with a user-facing message) on invalid
+        input, e.g. a non-numeric port."""
         mode = self.mode_combo.currentText()
-        args = []
 
         if mode == "UDP":
-            args.append("udp")
-            if self.udp_bind_host.text().strip():
-                args.extend(["--bind-host", self.udp_bind_host.text().strip()])
-            if self.udp_bind_port.text().strip():
-                args.extend(["--bind-port", self.udp_bind_port.text().strip()])
-            if self.udp_target_host.text().strip():
-                args.extend(["--target-host", self.udp_target_host.text().strip()])
-            if self.udp_target_port.text().strip():
-                args.extend(["--target-port", self.udp_target_port.text().strip()])
-
+            fields = {
+                "bind_host": self.udp_bind_host.text(),
+                "bind_port": self.udp_bind_port.text(),
+                "target_host": self.udp_target_host.text(),
+                "target_port": self.udp_target_port.text(),
+            }
         elif mode == "TCP Client":
-            args.append("tcp-client")
-            if self.tcp_cli_host.text().strip():
-                args.extend(["--host", self.tcp_cli_host.text().strip()])
-            if self.tcp_cli_port.text().strip():
-                args.extend(["--port", self.tcp_cli_port.text().strip()])
-
+            fields = {"host": self.tcp_cli_host.text(), "port": self.tcp_cli_port.text()}
         elif mode == "TCP Server":
-            args.append("tcp-server")
-            if self.tcp_srv_host.text().strip():
-                args.extend(["--listen-host", self.tcp_srv_host.text().strip()])
-            if self.tcp_srv_port.text().strip():
-                args.extend(["--listen-port", self.tcp_srv_port.text().strip()])
-
+            fields = {"listen_host": self.tcp_srv_host.text(), "listen_port": self.tcp_srv_port.text()}
         elif mode == "TCP Proxy":
-            args.append("tcp-proxy")
-            if self.tcp_prx_listen_host.text().strip():
-                args.extend(["--listen-host", self.tcp_prx_listen_host.text().strip()])
-            if self.tcp_prx_listen_port.text().strip():
-                args.extend(["--listen-port", self.tcp_prx_listen_port.text().strip()])
-            if self.tcp_prx_target_host.text().strip():
-                args.extend(["--target-host", self.tcp_prx_target_host.text().strip()])
-            if self.tcp_prx_target_port.text().strip():
-                args.extend(["--target-port", self.tcp_prx_target_port.text().strip()])
-
+            fields = {
+                "listen_host": self.tcp_prx_listen_host.text(),
+                "listen_port": self.tcp_prx_listen_port.text(),
+                "target_host": self.tcp_prx_target_host.text(),
+                "target_port": self.tcp_prx_target_port.text(),
+            }
         elif mode == "Serial":
-            args.append("serial")
-            if self.ser_port.text().strip():
-                args.extend(["--port", self.ser_port.text().strip()])
-            if self.ser_baud.currentText().strip():
-                args.extend(["--baudrate", self.ser_baud.currentText().strip()])
+            fields = {"serial_port": self.ser_port.currentText(), "baudrate": self.ser_baud.currentText()}
+        else:
+            fields = {}
 
-        decoder = self.decoder_combo.currentText()
-        if decoder != "raw":
-            args.extend(["--decoder", decoder])
-            if decoder == "fixed":
-                args.extend(["--frame-size", str(self.dec_fixed_size.value())])
-            elif decoder == "delimiter":
-                delim = self.dec_delim_edit.text().strip()
-                if delim:
-                    args.extend(["--delimiter", delim])
-                if self.dec_delim_inc_cb.isChecked():
-                    args.append("--include-delimiter")
-            elif decoder == "length-prefix":
-                args.extend(["--length-size", self.dec_len_size_combo.currentText()])
-                args.extend(["--length-endian", self.dec_len_endian_combo.currentText()])
-                if self.dec_len_inc_hdr_cb.isChecked():
-                    args.append("--length-includes-header")
+        decoder_kind = self.decoder_combo.currentText()
+        decoder = build_decoder_config(
+            decoder_kind,
+            frame_size=self.dec_fixed_size.value(),
+            delimiter_hex=self.dec_delim_edit.text().strip(),
+            include_delimiter=self.dec_delim_inc_cb.isChecked(),
+            length_size=int(self.dec_len_size_combo.currentText()),
+            length_endian=self.dec_len_endian_combo.currentText(),
+            length_includes_header=self.dec_len_inc_hdr_cb.isChecked(),
+        )
 
-        log_file = self.log_file_edit.text().strip()
-        if log_file:
-            args.extend(["--log", log_file])
+        common = {
+            "log_path": self.log_file_edit.text().strip() if self.log_file_cb.isChecked() else "",
+            "hex_raw": False,
+            "hex_frame": False,
+            "latency": True,
+        }
 
-        extra = self.extra_args_edit.text().strip()
-        if extra:
-            args.append(extra)
+        return build_capture_config(mode, fields, decoder, common)
 
-        self.cli_args_edit.setText(" ".join(args))
+    def update_config_preview(self):
+        mode = self.mode_combo.currentText()
+
+        try:
+            config = self._collect_capture_config()
+        except ValueError as exc:
+            self.config_preview_edit.setText(f"(invalid: {exc})")
+        else:
+            self.config_preview_edit.setText(json.dumps(config))
 
         # Update Port label
         active_port = "-"
@@ -1243,19 +1400,67 @@ class MainWindow(QMainWindow):
             tp = self.tcp_prx_target_port.text().strip()
             active_port = f"Proxy {lp} -> {tp}"
         elif mode == "Serial":
-            active_port = self.ser_port.text().strip()
+            active_port = self.ser_port.currentText().strip()
 
         self.update_port(active_port or "-")
 
     def on_decoder_changed(self, index: int):
         self.decoder_param_stack.setCurrentIndex(index)
-        self.update_generated_args()
+        self.update_config_preview()
 
-    def toggle_settings_visibility(self, checked: bool):
-        self.conn_group.setVisible(checked)
+    def _build_settings_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Settings")
+        dialog.setMinimumWidth(480)
+        layout = QVBoxLayout(dialog)
+
+        paths_layout = QHBoxLayout()
+        paths_layout.addWidget(QLabel("CLI Path:", dialog))
+        paths_layout.addWidget(self.cli_path_edit)
+        paths_layout.addWidget(self.browse_cli_btn)
+        layout.addLayout(paths_layout)
+
+        socket_layout = QHBoxLayout()
+        socket_layout.addWidget(QLabel("Socket Path:", dialog))
+        socket_layout.addWidget(self.socket_path_edit)
+        socket_layout.addWidget(self.connect_btn)
+        layout.addLayout(socket_layout)
+
+        preview_layout = QHBoxLayout()
+        preview_layout.addWidget(QLabel("Config Preview:", dialog))
+        preview_layout.addWidget(self.config_preview_edit)
+        layout.addLayout(preview_layout)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        buttons.rejected.connect(dialog.close)
+        buttons.accepted.connect(dialog.close)
+        layout.addWidget(buttons)
+
+        self.settings_dialog = dialog
+
+    def open_settings_dialog(self):
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+        self.settings_dialog.activateWindow()
+
+    def _on_log_file_toggled(self, checked: bool):
+        self.log_file_edit.setEnabled(checked)
+        self.browse_log_btn.setEnabled(checked)
+
+    def browse_log_path(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Choose JSONL Log File", self.log_file_edit.text(), "JSONL Files (*.jsonl);;All Files (*)"
+        )
+        if path:
+            self.log_file_edit.setText(path)
 
     def closeEvent(self, event):
         self.save_settings()
-        self.stop_capture()
         self.disconnect_socket()
+        # stop_capture() alone would only send a stop_capture IPC command, leaving an
+        # engine process we spawned running in the background forever. Only kill the
+        # process if we're the one who spawned it - an Attach-only session must leave
+        # someone else's engine process alone.
+        if self.capture_process.is_running():
+            self.capture_process.stop()
         event.accept()
