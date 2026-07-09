@@ -36,14 +36,24 @@ def find_packet_probe_binary() -> str:
     try:
         current_dir = Path(__file__).resolve().parent
         workspace_root = current_dir.parents[1]
+        build_root = workspace_root / "build"
+        exe_name = "packet-probe.exe" if os.name == "nt" else "packet-probe"
 
-        build_bin = workspace_root / "build" / "packet-probe"
-        if build_bin.exists() and os.access(build_bin, os.X_OK):
-            return str(build_bin)
+        candidates = [
+            build_root / "packet-probe",
+            build_root / "apps" / "packet-probe-cli" / "packet-probe",
+            build_root / exe_name,
+            build_root / "apps" / "packet-probe-cli" / exe_name,
+        ]
+        # Multi-config generators (MSVC/Ninja Multi-Config) place binaries
+        # under a per-configuration subdirectory instead of build/ directly.
+        for config in ("Debug", "Release", "RelWithDebInfo", "MinSizeRel"):
+            candidates.append(build_root / config / exe_name)
+            candidates.append(build_root / "apps" / "packet-probe-cli" / config / exe_name)
 
-        build_bin_alt = workspace_root / "build" / "apps" / "packet-probe-cli" / "packet-probe"
-        if build_bin_alt.exists() and os.access(build_bin_alt, os.X_OK):
-            return str(build_bin_alt)
+        for candidate in candidates:
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return str(candidate)
     except Exception:
         pass
 
