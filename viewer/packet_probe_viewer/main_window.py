@@ -7,13 +7,14 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QTableView, QSplitter, QHeaderView, QMessageBox, QFileDialog,
     QPlainTextEdit, QGroupBox, QTabWidget, QComboBox, QRadioButton, QStackedWidget,
-    QSpinBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox
+    QSpinBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QButtonGroup,
+    QInputDialog, QFrame
 )
 from PySide6.QtCore import Qt, QItemSelection, QModelIndex, QTimer, QSettings
 from PySide6.QtGui import QFont, QIntValidator
 from .ipc_client import IpcClientWorker
 from .event_model import PacketEvent
-from .packet_table_model import PacketTableModel, PacketFilterProxyModel
+from .packet_table_model import PacketTableModel, PacketFilterProxyModel, DirectionChipDelegate
 from .widgets.hex_view import HexView
 from .widgets.event_detail import EventDetailView
 from .jsonl_log_loader import load_packet_probe_jsonl
@@ -49,6 +50,64 @@ def find_packet_probe_binary() -> str:
     return "packet-probe"
 
 
+def _chip_qss(bg: str, fg: str, border: str) -> str:
+    # Shared pill/chip styling for the status indicators. Colors are the sRGB
+    # equivalents of the "Packet Probe Viewer" design mock's oklch chips.
+    return (
+        f"background-color: {bg}; color: {fg}; border-radius: 6px; "
+        f"padding: 4px 10px; font-weight: bold; border: 1px solid {border};"
+    )
+
+
+# Each transport maps to a distinct accent (base, hover) - the design's
+# mode-adaptive accent, so the active capture mode reads through the primary
+# buttons, focus rings, active pills and tab. sRGB of the mock's MODE_COLORS.
+MODE_ACCENTS: dict[str, tuple[str, str]] = {
+    "UDP": ("#2cb3b3", "#43c4c4"),
+    "TCP Client": ("#4ba3f7", "#68b4f9"),
+    "TCP Server": ("#7e8ef4", "#95a1f6"),
+    "TCP Proxy": ("#ae7ee2", "#bd94e8"),
+    "Serial": ("#eb883b", "#ef9a58"),
+}
+
+
+def _accent_overrides(accent: str, accent_hover: str) -> str:
+    # Appended after DARK_THEME_QSS so the mode's accent wins for the widgets
+    # that should recolor with the transport.
+    return f"""
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {accent}; background-color: #030509; }}
+QPushButton#start_capture_btn, QPushButton#send_btn {{ background-color: {accent}; border: 1px solid {accent}; color: #090b0f; font-weight: 700; }}
+QPushButton#start_capture_btn:hover, QPushButton#send_btn:hover {{ background-color: {accent_hover}; }}
+QTabBar::tab:selected {{ background-color: #10141b; color: {accent}; font-weight: bold; }}
+QCheckBox::indicator:checked {{ background-color: {accent}; border: 1px solid {accent}; }}
+QRadioButton::indicator:checked {{ background-color: {accent}; border: 1px solid {accent}; }}
+QComboBox QAbstractItemView {{ selection-background-color: {accent}; selection-color: #090b0f; }}
+QMenu::item:selected {{ background-color: {accent}; color: #090b0f; }}
+QPushButton:checked {{ background-color: {accent}; border: 1px solid {accent}; color: #090b0f; }}
+"""
+
+
+def _pill_qss(active: bool, accent: str) -> str:
+    # Segmented-control button (Mode / Filter direction / Send format). Active
+    # pill is filled with the accent and dark text; inactive is transparent.
+    if active:
+        return (
+            f"QPushButton {{ background-color: {accent}; color: #090b0f; border: none; "
+            f"border-radius: 6px; padding: 6px 12px; font-weight: 700; }}"
+        )
+    return (
+        "QPushButton { background-color: transparent; color: #88909c; border: none; "
+        "border-radius: 6px; padding: 6px 12px; font-weight: 600; } "
+        "QPushButton:hover { color: #d4d8de; }"
+    )
+
+
+# Inset "track" behind a segmented pill group.
+_PILL_TRACK_QSS = (
+    "QWidget#pill_track { background-color: #05070d; border-radius: 8px; } "
+)
+
+
 def format_metadata_message(metadata: dict | None) -> str:
     if not metadata:
         return ""
@@ -61,9 +120,15 @@ def format_metadata_message(metadata: dict | None) -> str:
 class MainWindow(QMainWindow):
     def __init__(self, initial_socket_path: str = "/tmp/packet-probe.sock", settings_org: str = "UnilinkLab", settings_app: str = "PacketProbeViewer", parent=None):
         super().__init__(parent)
-        self.setStyleSheet(DARK_THEME_QSS)
         self.setWindowTitle("Packet Probe Viewer")
-        self.resize(950, 800)
+        self.resize(1080, 840)
+
+        # Mode-adaptive accent (see MODE_ACCENTS); defaults to UDP's cyan.
+        self._accent, self._accent_hover = MODE_ACCENTS["UDP"]
+        self.setStyleSheet(DARK_THEME_QSS + _accent_overrides(self._accent, self._accent_hover))
+
+        # Session send macros (name/format/data/eol), like the design's macro row.
+        self._macros: list[dict] = []
 
         self.generated_ipc_path = make_default_ipc_path()
         self.initial_socket_path = resolve_initial_socket_path(initial_socket_path)
@@ -115,70 +180,48 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # ── Top app bar (brand + status chips + socket/Attach/settings) ──────
+        main_layout.addWidget(self._build_app_bar())
 
         # Top Control Widget
         top_control_widget = QWidget(self)
         top_control_layout = QVBoxLayout(top_control_widget)
-        top_control_layout.setContentsMargins(0, 0, 0, 0)
+        top_control_layout.setContentsMargins(12, 8, 12, 8)
+        top_control_layout.setSpacing(8)
 
-        # Row 1: Action Buttons, Status Indicators & Settings Toggle
-        action_btn_layout = QHBoxLayout()
-        self.start_capture_btn = QPushButton("Start Capture", self)
-        self.start_capture_btn.setObjectName("start_capture_btn")
-        self.start_capture_btn.clicked.connect(self.start_capture)
-        action_btn_layout.addWidget(self.start_capture_btn)
-
-        self.stop_capture_btn = QPushButton("Stop Capture", self)
-        self.stop_capture_btn.setObjectName("stop_capture_btn")
-        self.stop_capture_btn.setEnabled(False)
-        self.stop_capture_btn.clicked.connect(self.stop_capture)
-        action_btn_layout.addWidget(self.stop_capture_btn)
-
-        self.pause_btn = QPushButton("Pause", self)
-        self.pause_btn.clicked.connect(self.toggle_pause)
-        action_btn_layout.addWidget(self.pause_btn)
-
-        self.clear_btn = QPushButton("Clear", self)
-        self.clear_btn.clicked.connect(self.clear_all)
-        action_btn_layout.addWidget(self.clear_btn)
-
-        action_btn_layout.addStretch()
-
-        self.toggle_settings_btn = QPushButton("⚙️ Settings", self)
-        self.toggle_settings_btn.clicked.connect(self.open_settings_dialog)
-        action_btn_layout.addWidget(self.toggle_settings_btn)
-
-        top_control_layout.addLayout(action_btn_layout)
-
-        # Connection Config Group (Collapsible, Split Layout internally)
-        self.conn_group = QGroupBox("Configuration", self)
+        # ── Capture Setup card: mode + mode-specific fields ─────────────────
+        self.conn_group = QGroupBox("Capture Setup", self)
         conn_layout = QVBoxLayout(self.conn_group)
 
-        # Split Config into Left (Connection) and Right (Decoder)
-        split_config_layout = QHBoxLayout()
-
-        # Left Widget: Connection Settings
-        left_widget = QWidget(self)
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-
         mode_layout = QHBoxLayout()
-        mode_layout.addWidget(QLabel("Mode:", self))
+        mode_caption = QLabel("MODE", self)
+        mode_caption.setStyleSheet("color:#6b727e; font-size:10px; font-weight:600; letter-spacing:1px;")
+        mode_layout.addWidget(mode_caption)
+        # mode_combo stays as the backing model/logic (and for settings + tests);
+        # it is hidden in favour of the segmented pill control below.
         self.mode_combo = QComboBox(self)
         self.mode_combo.addItems(["UDP", "TCP Client", "TCP Server", "TCP Proxy", "Serial"])
+        self.mode_combo.hide()
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
-        mode_layout.addWidget(self.mode_combo)
+        self.mode_pills = self._make_pill_bar(
+            ["UDP", "TCP Client", "TCP Server", "TCP Proxy", "Serial"],
+            lambda i: self.mode_combo.setCurrentIndex(i),
+        )
+        mode_layout.addWidget(self.mode_pills["widget"])
         mode_layout.addStretch()
-        left_layout.addLayout(mode_layout)
+        conn_layout.addLayout(mode_layout)
 
         self.mode_help_label = QLabel(self)
         self.mode_help_label.setWordWrap(True)
-        self.mode_help_label.setStyleSheet("color: #9ca3af; font-style: italic;")
-        left_layout.addWidget(self.mode_help_label)
+        self.mode_help_label.setStyleSheet("color: #79818d; font-style: italic;")
+        conn_layout.addWidget(self.mode_help_label)
 
-        # Parameter Stacked Widget
+        # Parameter Stacked Widget (mode-specific fields)
         self.param_stack = QStackedWidget(self)
-        left_layout.addWidget(self.param_stack)
+        conn_layout.addWidget(self.param_stack)
 
         # 1. UDP Panel
         udp_widget = QWidget(self)
@@ -294,106 +337,129 @@ class MainWindow(QMainWindow):
         serial_grid.addWidget(self.ser_baud, 0, 3)
         self.param_stack.addWidget(serial_widget)
 
-        split_config_layout.addWidget(left_widget, 1)
+        top_control_layout.addWidget(self.conn_group)
 
-        # Right Widget: Frame Decoder Settings
-        right_widget = QWidget(self)
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        # Mode-specific field inputs use a monospace face (matches the mock).
+        mono_field = QFont("JetBrains Mono")
+        mono_field.setStyleHint(QFont.StyleHint.Monospace)
+        for w in self.param_stack.findChildren(QLineEdit):
+            w.setFont(mono_field)
+        for w in self.param_stack.findChildren(QComboBox):
+            w.setFont(mono_field)
 
-        dec_combo_layout = QHBoxLayout()
-        dec_combo_layout.addWidget(QLabel("Decoder:", self))
+        # ── Frame decoder widgets (rendered inline in the actions row) ──────
         self.decoder_combo = QComboBox(self)
         self.decoder_combo.addItems(["raw", "fixed", "delimiter", "length-prefix"])
         self.decoder_combo.currentIndexChanged.connect(self.on_decoder_changed)
-        dec_combo_layout.addWidget(self.decoder_combo)
-        dec_combo_layout.addStretch()
-        right_layout.addLayout(dec_combo_layout)
 
-        # Decoder parameters stack
         self.decoder_param_stack = QStackedWidget(self)
-        right_layout.addWidget(self.decoder_param_stack)
 
-        # Decoder Stack 1: Raw (Empty)
-        dec_raw_widget = QWidget(self)
-        dec_raw_layout = QHBoxLayout(dec_raw_widget)
-        dec_raw_layout.setContentsMargins(0, 5, 0, 5)
-        dec_raw_layout.addWidget(QLabel("Raw bytes mode - no frame boundary detection", self))
-        dec_raw_layout.addStretch()
-        self.decoder_param_stack.addWidget(dec_raw_widget)
+        # 1. Raw: no frame params (hidden when selected)
+        self.decoder_param_stack.addWidget(QWidget(self))
 
-        # Decoder Stack 2: Fixed Size
+        # 2. Fixed Size
         dec_fixed_widget = QWidget(self)
         dec_fixed_layout = QHBoxLayout(dec_fixed_widget)
-        dec_fixed_layout.setContentsMargins(0, 5, 0, 5)
+        dec_fixed_layout.setContentsMargins(0, 0, 0, 0)
         dec_fixed_layout.addWidget(QLabel("Frame Size:", self))
         self.dec_fixed_size = QSpinBox(self)
         self.dec_fixed_size.setRange(1, 1000000)
         self.dec_fixed_size.setValue(16)
+        self.dec_fixed_size.setFont(mono_field)
         self.dec_fixed_size.valueChanged.connect(self.update_config_preview)
         dec_fixed_layout.addWidget(self.dec_fixed_size)
         dec_fixed_layout.addStretch()
         self.decoder_param_stack.addWidget(dec_fixed_widget)
 
-        # Decoder Stack 3: Delimiter
+        # 3. Delimiter
         dec_delim_widget = QWidget(self)
         dec_delim_layout = QHBoxLayout(dec_delim_widget)
-        dec_delim_layout.setContentsMargins(0, 5, 0, 5)
+        dec_delim_layout.setContentsMargins(0, 0, 0, 0)
         dec_delim_layout.addWidget(QLabel("Delimiter (Hex):", self))
         self.dec_delim_edit = QLineEdit("0A", self)
         self.dec_delim_edit.setPlaceholderText("e.g. 0A or 0D0A")
+        self.dec_delim_edit.setFont(mono_field)
+        self.dec_delim_edit.setMaximumWidth(80)
         self.dec_delim_edit.textChanged.connect(self.update_config_preview)
         dec_delim_layout.addWidget(self.dec_delim_edit)
-        self.dec_delim_inc_cb = QCheckBox("Include Delimiter", self)
+        self.dec_delim_inc_cb = QCheckBox("Incl.", self)
         self.dec_delim_inc_cb.setChecked(False)
         self.dec_delim_inc_cb.toggled.connect(self.update_config_preview)
         dec_delim_layout.addWidget(self.dec_delim_inc_cb)
+        dec_delim_layout.addStretch()
         self.decoder_param_stack.addWidget(dec_delim_widget)
 
-        # Decoder Stack 4: Length-Prefix
+        # 4. Length-Prefix
         dec_len_widget = QWidget(self)
         dec_len_layout = QHBoxLayout(dec_len_widget)
-        dec_len_layout.setContentsMargins(0, 5, 0, 5)
-        dec_len_layout.addWidget(QLabel("Length Size:", self))
+        dec_len_layout.setContentsMargins(0, 0, 0, 0)
+        dec_len_layout.addWidget(QLabel("Length:", self))
         self.dec_len_size_combo = QComboBox(self)
         self.dec_len_size_combo.addItems(["1", "2", "4"])
         self.dec_len_size_combo.setCurrentText("2")
         self.dec_len_size_combo.currentIndexChanged.connect(self.update_config_preview)
         dec_len_layout.addWidget(self.dec_len_size_combo)
 
-        dec_len_layout.addWidget(QLabel("Endian:", self))
         self.dec_len_endian_combo = QComboBox(self)
         self.dec_len_endian_combo.addItems(["big", "little"])
         self.dec_len_endian_combo.setCurrentText("big")
         self.dec_len_endian_combo.currentIndexChanged.connect(self.update_config_preview)
         dec_len_layout.addWidget(self.dec_len_endian_combo)
 
-        self.dec_len_inc_hdr_cb = QCheckBox("Includes Header", self)
+        self.dec_len_inc_hdr_cb = QCheckBox("Hdr", self)
         self.dec_len_inc_hdr_cb.setChecked(False)
         self.dec_len_inc_hdr_cb.toggled.connect(self.update_config_preview)
         dec_len_layout.addWidget(self.dec_len_inc_hdr_cb)
+        dec_len_layout.addStretch()
         self.decoder_param_stack.addWidget(dec_len_widget)
+        self.decoder_param_stack.setVisible(False)  # raw is the default: no params
 
-        split_config_layout.addWidget(right_widget, 1)
-        conn_layout.addLayout(split_config_layout)
-
-        # Common Row (Log File - opt-in, off by default so a first run doesn't
-        # silently write a JSONL file the user didn't ask for)
-        common_layout = QHBoxLayout()
-        self.log_file_cb = QCheckBox("Record to JSONL:", self)
+        # ── Record-to-JSONL widgets (opt-in; rendered inline in the actions row) ──
+        self.log_file_cb = QCheckBox("Record to JSONL", self)
         self.log_file_cb.setChecked(False)
         self.log_file_cb.toggled.connect(self._on_log_file_toggled)
         self.log_file_cb.toggled.connect(self.update_config_preview)
-        common_layout.addWidget(self.log_file_cb)
         self.log_file_edit = QLineEdit("capture.jsonl", self)
         self.log_file_edit.setEnabled(False)
+        self.log_file_edit.setMaximumWidth(150)
         self.log_file_edit.textChanged.connect(self.update_config_preview)
-        common_layout.addWidget(self.log_file_edit)
         self.browse_log_btn = QPushButton("Browse", self)
         self.browse_log_btn.setEnabled(False)
         self.browse_log_btn.clicked.connect(self.browse_log_path)
-        common_layout.addWidget(self.browse_log_btn)
-        conn_layout.addLayout(common_layout)
+
+        # ── Actions row: capture controls + decoder + record ────────────────
+        action_btn_layout = QHBoxLayout()
+        self.start_capture_btn = QPushButton("▶ Start Capture", self)
+        self.start_capture_btn.setObjectName("start_capture_btn")
+        self.start_capture_btn.clicked.connect(self.start_capture)
+        action_btn_layout.addWidget(self.start_capture_btn)
+
+        self.stop_capture_btn = QPushButton("■ Stop", self)
+        self.stop_capture_btn.setObjectName("stop_capture_btn")
+        self.stop_capture_btn.setEnabled(False)
+        self.stop_capture_btn.clicked.connect(self.stop_capture)
+        action_btn_layout.addWidget(self.stop_capture_btn)
+
+        self.pause_btn = QPushButton("Pause", self)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        action_btn_layout.addWidget(self.pause_btn)
+
+        self.clear_btn = QPushButton("Clear", self)
+        self.clear_btn.clicked.connect(self.clear_all)
+        action_btn_layout.addWidget(self.clear_btn)
+
+        action_btn_layout.addWidget(self._vsep())
+        dec_caption = QLabel("Decoder:", self)
+        dec_caption.setStyleSheet("color:#88909c; font-weight:600;")
+        action_btn_layout.addWidget(dec_caption)
+        action_btn_layout.addWidget(self.decoder_combo)
+        action_btn_layout.addWidget(self.decoder_param_stack)
+
+        action_btn_layout.addStretch()
+        action_btn_layout.addWidget(self.log_file_cb)
+        action_btn_layout.addWidget(self.log_file_edit)
+        action_btn_layout.addWidget(self.browse_log_btn)
+        top_control_layout.addLayout(action_btn_layout)
 
         # Advanced/developer-facing fields (engine executable path, IPC socket path,
         # generated config preview) live in a separate Settings dialog rather than
@@ -404,6 +470,7 @@ class MainWindow(QMainWindow):
         self.browse_cli_btn = QPushButton("Browse", self)
         self.browse_cli_btn.clicked.connect(self.browse_cli_path)
         self.socket_path_edit = QLineEdit(self.initial_socket_path, self)
+        self.socket_path_edit.textChanged.connect(self.socket_path_label.setText)
         self.connect_btn = QPushButton("Attach", self)
         self.connect_btn.setToolTip("Attach to an already-running 'packet-probe engine' at this socket path.")
         self.connect_btn.clicked.connect(self.toggle_connection)
@@ -411,29 +478,34 @@ class MainWindow(QMainWindow):
         self.config_preview_edit.setReadOnly(True)
         self._build_settings_dialog()
 
-        top_control_layout.addWidget(self.conn_group)
-
         main_layout.addWidget(top_control_widget)
 
-        # Menu bar
-        menu_bar = self.menuBar()
-        file_menu = menu_bar.addMenu("&File")
-
-        open_action = file_menu.addAction("&Open Log...")
-        open_action.triggered.connect(self.open_log_file)
-
-        exit_action = file_menu.addAction("E&xit")
-        exit_action.triggered.connect(self.close)
-
         # Filter Bar (direction / event type / text search over the live event table)
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Filter:", self))
+        filter_bar = QWidget(self)
+        filter_bar.setObjectName("filter_bar")
+        filter_bar.setStyleSheet(
+            "QWidget#filter_bar { border-bottom: 1px solid #1e242e; }"
+        )
+        filter_layout = QHBoxLayout(filter_bar)
+        filter_layout.setContentsMargins(14, 7, 14, 7)
+        filter_layout.setSpacing(8)
+        filter_caption = QLabel("FILTER", self)
+        filter_caption.setStyleSheet("color:#6b727e; font-size:11px; font-weight:600; letter-spacing:1px;")
+        filter_layout.addWidget(filter_caption)
+
+        # Direction: hidden backing combo (data roles + tests) driven by pills.
         self.filter_direction_combo = QComboBox(self)
         self.filter_direction_combo.addItem("All Directions", "all")
         self.filter_direction_combo.addItem("App -> Device", "app_to_device")
         self.filter_direction_combo.addItem("Device -> App", "device_to_app")
+        self.filter_direction_combo.hide()
         self.filter_direction_combo.currentIndexChanged.connect(self._on_filter_changed)
-        filter_layout.addWidget(self.filter_direction_combo)
+        self.filter_direction_combo.currentIndexChanged.connect(self._sync_dir_pills)
+        self.dir_pills = self._make_pill_bar(
+            ["All", "App → Dev", "Dev → App"],
+            lambda i: self.filter_direction_combo.setCurrentIndex(i),
+        )
+        filter_layout.addWidget(self.dir_pills["widget"])
 
         self.filter_type_combo = QComboBox(self)
         self.filter_type_combo.addItem("All Types", "all")
@@ -443,10 +515,16 @@ class MainWindow(QMainWindow):
         filter_layout.addWidget(self.filter_type_combo)
 
         self.filter_text_edit = QLineEdit(self)
-        self.filter_text_edit.setPlaceholderText("Search summary/hex...")
+        self.filter_text_edit.setPlaceholderText("Search summary / hex…")
+        self.filter_text_edit.setMaximumWidth(340)
         self.filter_text_edit.textChanged.connect(self._on_filter_changed)
         filter_layout.addWidget(self.filter_text_edit)
-        main_layout.addLayout(filter_layout)
+        filter_layout.addStretch()
+
+        self.filter_count_label = QLabel("0 / 0 events", self)
+        self.filter_count_label.setStyleSheet("color:#5d646f; font-size:11px;")
+        filter_layout.addWidget(self.filter_count_label)
+        main_layout.addWidget(filter_bar)
 
         # Main Splitter
         main_splitter = QSplitter(Qt.Orientation.Vertical, self)
@@ -462,41 +540,57 @@ class MainWindow(QMainWindow):
         self.table_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table_view.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.table_view.selectionModel().selectionChanged.connect(self.on_selection_changed)
+        # Direction column rendered as a filled chip badge (matches the mock).
+        self.table_view.setItemDelegateForColumn(3, DirectionChipDelegate(self.table_view))
         main_splitter.addWidget(self.table_view)
 
         # Send Panel
-        self.send_group = QGroupBox("Send Message (to Target Device)", self)
+        self.send_group = QGroupBox("SEND", self)
         self.send_group.setEnabled(False)
-        send_layout = QHBoxLayout(self.send_group)
+        send_v = QVBoxLayout(self.send_group)
+        send_v.setSpacing(8)
 
-        send_layout.addWidget(QLabel("Format:", self))
+        send_row = QHBoxLayout()
+        # Hidden backing radios (settings + tests + send logic) driven by pills.
         self.text_radio = QRadioButton("Text", self)
         self.text_radio.setChecked(True)
+        self.text_radio.hide()
         self.text_radio.toggled.connect(self.on_send_format_changed)
-        send_layout.addWidget(self.text_radio)
-
         self.hex_radio = QRadioButton("Hex", self)
-        send_layout.addWidget(self.hex_radio)
+        self.hex_radio.hide()
+        self.fmt_pills = self._make_pill_bar(
+            ["Text", "Hex"],
+            lambda i: (self.hex_radio if i else self.text_radio).setChecked(True),
+        )
+        send_row.addWidget(self.fmt_pills["widget"])
 
-        send_layout.addWidget(QLabel("Data:", self))
         self.send_input = QLineEdit(self)
-        self.send_input.setPlaceholderText("Type message to send...")
+        self.send_input.setPlaceholderText("Type message to send…")
+        self.send_input.setFont(mono_field)
         self.send_input.returnPressed.connect(self.send_data)
-        send_layout.addWidget(self.send_input)
+        send_row.addWidget(self.send_input)
 
-        send_layout.addWidget(QLabel("EOL:", self))
         self.eol_combo = QComboBox(self)
-        self.eol_combo.addItems(["None", "LF (\\n)", "CR (\\r)", "CRLF (\\r\\n)"])
+        self.eol_combo.addItems(["EOL: None", "EOL: LF", "EOL: CR", "EOL: CRLF"])
         self.eol_combo.setCurrentIndex(0)
-        send_layout.addWidget(self.eol_combo)
+        send_row.addWidget(self.eol_combo)
 
         self.send_btn = QPushButton("Send", self)
         self.send_btn.setObjectName("send_btn")
         self.send_btn.clicked.connect(self.send_data)
-        send_layout.addWidget(self.send_btn)
+        send_row.addWidget(self.send_btn)
 
         self.send_feedback_label = QLabel(self)
-        send_layout.addWidget(self.send_feedback_label)
+        send_row.addWidget(self.send_feedback_label)
+        send_v.addLayout(send_row)
+
+        # Macros row: quick-send buttons for saved payloads (session-scoped).
+        self.macro_widget = QWidget(self)
+        self._macro_layout = QHBoxLayout(self.macro_widget)
+        self._macro_layout.setContentsMargins(0, 0, 0, 0)
+        self._macro_layout.setSpacing(7)
+        send_v.addWidget(self.macro_widget)
+        self._rebuild_macros()
 
         # Bottom Detail Tabs
         self.detail_tabs = QTabWidget(self)
@@ -524,24 +618,202 @@ class MainWindow(QMainWindow):
 
         main_splitter.setSizes([450, 75, 275])
 
-        self.message_label = QLabel("", self)
-        main_layout.addWidget(self.message_label)
-
-        # Status Bar: consolidates the connection/capture/mode/port/counter indicators
-        # that used to be four separate QLabels crowding the action button row.
+        # Bottom status bar: event/error counters (left) and the latest message
+        # (right). The connection/state/mode/port chips live in the top app bar.
         status_bar = self.statusBar()
-        self.status_label = QLabel(self)
-        status_bar.addWidget(self.status_label)
-        self.state_label = QLabel(self)
-        status_bar.addWidget(self.state_label)
-        self.conn_mode_label = QLabel(self)
-        status_bar.addWidget(self.conn_mode_label)
-        self.port_label = QLabel(self)
-        status_bar.addWidget(self.port_label)
         self.event_count_label = QLabel("Events: 0", self)
-        status_bar.addPermanentWidget(self.event_count_label)
+        status_bar.addWidget(self.event_count_label)
         self.error_count_label = QLabel("Errors: 0", self)
-        status_bar.addPermanentWidget(self.error_count_label)
+        status_bar.addWidget(self.error_count_label)
+        self.message_label = QLabel("", self)
+        status_bar.addPermanentWidget(self.message_label)
+
+    # ── Design chrome: app bar, segmented pills, theming, macros ───────────
+
+    def _vsep(self) -> QFrame:
+        sep = QFrame(self)
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFixedHeight(22)
+        sep.setStyleSheet("color:#1e242e; background-color:#1e242e; max-width:1px;")
+        return sep
+
+    def _build_app_bar(self) -> QWidget:
+        bar = QWidget(self)
+        bar.setObjectName("app_bar")
+        bar.setFixedHeight(52)
+        bar.setStyleSheet(
+            "QWidget#app_bar { background-color:#090d14; border-bottom:1px solid #1e242e; }"
+        )
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(14, 0, 14, 0)
+        lay.setSpacing(10)
+
+        # Brand: accent logo tile + name + version badge
+        self.brand_logo = QLabel(bar)
+        self.brand_logo.setFixedSize(22, 22)
+        self.brand_logo.setStyleSheet(f"background-color:{self._accent}; border-radius:6px;")
+        lay.addWidget(self.brand_logo)
+        title = QLabel("Packet Probe", bar)
+        title.setStyleSheet("color:#e5e8ed; font-size:14px; font-weight:700;")
+        lay.addWidget(title)
+        version = QLabel("v0.4", bar)
+        version.setStyleSheet(
+            "background-color:#131921; color:#6b727e; font-family:'JetBrains Mono',monospace;"
+            " font-size:10px; padding:2px 6px; border-radius:4px;"
+        )
+        lay.addWidget(version)
+
+        lay.addWidget(self._vsep())
+
+        # Connection / state / mode / port chips (styled by the update_* helpers)
+        self.status_label = QLabel(bar)
+        lay.addWidget(self.status_label)
+        self.state_label = QLabel(bar)
+        lay.addWidget(self.state_label)
+        self.conn_mode_label = QLabel(bar)
+        lay.addWidget(self.conn_mode_label)
+        self.port_label = QLabel(bar)
+        lay.addWidget(self.port_label)
+
+        lay.addStretch()
+
+        self.socket_path_label = QLabel(self.initial_socket_path, bar)
+        self.socket_path_label.setStyleSheet(
+            "color:#6b727e; font-family:'JetBrains Mono',monospace; font-size:11px;"
+        )
+        lay.addWidget(self.socket_path_label)
+
+        self.attach_btn = QPushButton("Attach", bar)
+        self.attach_btn.setToolTip(
+            "Attach to / detach from an already-running 'packet-probe engine' at the configured socket path."
+        )
+        self.attach_btn.clicked.connect(self.toggle_connection)
+        lay.addWidget(self.attach_btn)
+
+        self.toggle_settings_btn = QPushButton("⚙", bar)
+        self.toggle_settings_btn.setToolTip("Settings")
+        self.toggle_settings_btn.setFixedWidth(34)
+        self.toggle_settings_btn.clicked.connect(self.open_settings_dialog)
+        lay.addWidget(self.toggle_settings_btn)
+        return bar
+
+    def _make_pill_bar(self, labels: list[str], on_click) -> dict:
+        """Segmented pill control (Mode / Filter direction / Send format). The
+        pills are the visible surface; a hidden combo/radio remains the source of
+        truth for logic, settings, and tests."""
+        track = QWidget(self)
+        track.setObjectName("pill_track")
+        track.setStyleSheet(_PILL_TRACK_QSS)
+        row = QHBoxLayout(track)
+        row.setContentsMargins(3, 3, 3, 3)
+        row.setSpacing(3)
+        group = QButtonGroup(track)
+        group.setExclusive(True)
+        buttons: list[QPushButton] = []
+        for i, label in enumerate(labels):
+            btn = QPushButton(label, track)
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(_pill_qss(i == 0, self._accent))
+            group.addButton(btn, i)
+            btn.clicked.connect(lambda _checked=False, idx=i: on_click(idx))
+            row.addWidget(btn)
+            buttons.append(btn)
+        buttons[0].setChecked(True)
+        return {"widget": track, "buttons": buttons, "group": group}
+
+    def _restyle_pills(self, pills: dict, active_index: int) -> None:
+        for i, btn in enumerate(pills["buttons"]):
+            active = i == active_index
+            btn.setChecked(active)
+            btn.setStyleSheet(_pill_qss(active, self._accent))
+
+    def _apply_theme(self) -> None:
+        self.setStyleSheet(DARK_THEME_QSS + _accent_overrides(self._accent, self._accent_hover))
+
+    def _sync_mode_visuals(self) -> None:
+        # Called whenever the selected transport changes: swap the accent and
+        # restyle every accent-dependent surface (pills, brand tile, theme).
+        mode = self.mode_combo.currentText()
+        self._accent, self._accent_hover = MODE_ACCENTS.get(mode, MODE_ACCENTS["UDP"])
+        self._apply_theme()
+        if hasattr(self, "brand_logo"):
+            self.brand_logo.setStyleSheet(f"background-color:{self._accent}; border-radius:6px;")
+        self._restyle_pills(self.mode_pills, self.mode_combo.currentIndex())
+        self._restyle_pills(self.dir_pills, self.filter_direction_combo.currentIndex())
+        self._restyle_pills(self.fmt_pills, 1 if self.hex_radio.isChecked() else 0)
+
+    def _sync_dir_pills(self) -> None:
+        self._restyle_pills(self.dir_pills, self.filter_direction_combo.currentIndex())
+
+    def _update_filter_count(self) -> None:
+        total = self.table_model.rowCount()
+        shown = self.filter_proxy.rowCount()
+        self.filter_count_label.setText(f"{shown} / {total} events")
+
+    # ── Send macros (session-scoped quick-send buttons) ────────────────────
+
+    def _rebuild_macros(self) -> None:
+        while self._macro_layout.count():
+            item = self._macro_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        caption = QLabel("MACROS", self.macro_widget)
+        caption.setStyleSheet("color:#5d646f; font-size:10px; font-weight:600; letter-spacing:1px;")
+        self._macro_layout.addWidget(caption)
+
+        for macro in self._macros:
+            run = QPushButton(macro["name"], self.macro_widget)
+            fmt = "HEX" if macro["is_hex"] else "TEXT"
+            run.setToolTip(f"{fmt}: {macro['data']}")
+            run.clicked.connect(lambda _c=False, m=macro: self._run_macro(m))
+            self._macro_layout.addWidget(run)
+            remove = QPushButton("×", self.macro_widget)
+            remove.setFixedWidth(24)
+            remove.setToolTip("Delete macro")
+            remove.clicked.connect(lambda _c=False, m=macro: self._remove_macro(m))
+            self._macro_layout.addWidget(remove)
+
+        add = QPushButton("+ Save as macro", self.macro_widget)
+        add.setStyleSheet(
+            "QPushButton { background:transparent; border:1px dashed #3a424e; color:#88909c;"
+            " border-radius:6px; padding:5px 11px; font-weight:600; }"
+            " QPushButton:hover { color:#d4d8de; border-color:#5d646f; }"
+        )
+        add.clicked.connect(self._add_macro_from_input)
+        self._macro_layout.addWidget(add)
+        self._macro_layout.addStretch()
+
+    def _run_macro(self, macro: dict) -> None:
+        (self.hex_radio if macro["is_hex"] else self.text_radio).setChecked(True)
+        self.eol_combo.setCurrentIndex(macro["eol_index"])
+        self.send_input.setText(macro["data"])
+        self.send_data()
+
+    def _remove_macro(self, macro: dict) -> None:
+        if macro in self._macros:
+            self._macros.remove(macro)
+        self._rebuild_macros()
+
+    def _add_macro_from_input(self) -> None:
+        data = self.send_input.text().strip()
+        if not data:
+            QMessageBox.information(
+                self, "Save Macro", "Type a message in the Send box first, then save it as a macro."
+            )
+            return
+        name, ok = QInputDialog.getText(self, "Save Macro", "Macro name:")
+        if not ok or not name.strip():
+            return
+        self._macros.append({
+            "name": name.strip(),
+            "is_hex": self.hex_radio.isChecked(),
+            "data": data,
+            "eol_index": self.eol_combo.currentIndex(),
+        })
+        self._rebuild_macros()
 
     # ── Connection management ──────────────────────────────────────────────
 
@@ -622,6 +894,10 @@ class MainWindow(QMainWindow):
                 self.set_mode("idle")
                 self.update_status("Status: disconnected")
 
+        # Keep the app-bar Attach button mirrored with the settings-dialog one.
+        self.attach_btn.setText(self.connect_btn.text().replace("...", "…"))
+        self.attach_btn.setEnabled(self.connect_btn.isEnabled())
+
     def on_error_occurred(self, error_msg: str):
         self._set_message(f"Error: {error_msg}", is_error=True)
         self.update_status("Status: failed")
@@ -665,6 +941,7 @@ class MainWindow(QMainWindow):
         else:
             self.table_model.append_event(event)
             self.table_view.scrollToBottom()
+        self._update_filter_count()
 
     def on_worker_finished(self):
         self.on_status_changed("disconnected")
@@ -676,7 +953,7 @@ class MainWindow(QMainWindow):
 
     def _set_message(self, text: str, is_error: bool = False):
         self.message_label.setText(text)
-        self.message_label.setStyleSheet("color: #fca5a5; font-weight: 600;" if is_error else "")
+        self.message_label.setStyleSheet("color: #ff645f; font-weight: 600;" if is_error else "")
 
     def update_status(self, text: str):
         self.status_label.setText(text)
@@ -685,92 +962,56 @@ class MainWindow(QMainWindow):
         # "connected"/"running" match below, since "disconnected" contains "connected"
         # as a substring and would otherwise get the same "success" styling.
         if "disconnected" in lower_text:
-            self.status_label.setStyleSheet(
-                "background-color: #1f2937; color: #9ca3af; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #374151;"
-            )
+            self.status_label.setStyleSheet(_chip_qss("#151b24", "#6b727e", "#232933"))
         elif "failed" in lower_text or "error" in lower_text:
-            self.status_label.setStyleSheet(
-                "background-color: #991b1b; color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #dc2626;"
-            )
+            self.status_label.setStyleSheet(_chip_qss("#3a0f0e", "#ff645f", "#7a1f1c"))
         elif "connecting" in lower_text or "launching" in lower_text:
-            self.status_label.setStyleSheet(
-                "background-color: #78350f; color: #fbbf24; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #d97706;"
-            )
+            self.status_label.setStyleSheet(_chip_qss("#3e2a00", "#eab532", "#6b4a00"))
         elif "offline" in lower_text:
-            self.status_label.setStyleSheet(
-                "background-color: #312e81; color: #a5b4fc; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #4f46e5;"
-            )
-        elif "connected" in lower_text or "running" in lower_text:
-            self.status_label.setStyleSheet(
-                "background-color: #064e3b; color: #34d399; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #059669;"
-            )
+            self.status_label.setStyleSheet(_chip_qss("#10141b", "#7e8ef4", "#2a3350"))
+        elif "connected" in lower_text or "running" in lower_text or "capturing" in lower_text:
+            self.status_label.setStyleSheet(_chip_qss("#063215", "#67d283", "#0d5a26"))
         else:
-            self.status_label.setStyleSheet(
-                "background-color: #1f2937; color: #9ca3af; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #374151;"
-            )
+            self.status_label.setStyleSheet(_chip_qss("#151b24", "#6b727e", "#232933"))
 
     def set_mode(self, mode: str):
         self.state_label.setText(f"State: {mode}")
         lower_mode = mode.lower()
         if lower_mode == "live":
-            self.state_label.setStyleSheet(
-                "background-color: #064e3b; color: #34d399; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #059669;"
-            )
+            self.state_label.setStyleSheet(_chip_qss("#063215", "#67d283", "#0d5a26"))
         elif lower_mode == "launcher":
-            self.state_label.setStyleSheet(
-                "background-color: #78350f; color: #fbbf24; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #d97706;"
-            )
+            self.state_label.setStyleSheet(_chip_qss("#3e2a00", "#eab532", "#6b4a00"))
         elif lower_mode == "offline":
-            self.state_label.setStyleSheet(
-                "background-color: #312e81; color: #a5b4fc; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #4f46e5;"
-            )
+            self.state_label.setStyleSheet(_chip_qss("#10141b", "#7e8ef4", "#2a3350"))
         elif lower_mode == "no live view":
-            self.state_label.setStyleSheet(
-                "background-color: #991b1b; color: #fca5a5; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #dc2626;"
-            )
+            self.state_label.setStyleSheet(_chip_qss("#3a0f0e", "#ff645f", "#7a1f1c"))
         else:  # "idle"
-            self.state_label.setStyleSheet(
-                "background-color: #1f2937; color: #9ca3af; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #374151;"
-            )
+            self.state_label.setStyleSheet(_chip_qss("#151b24", "#6b727e", "#232933"))
 
     def update_port(self, port_str: str):
         self.port_label.setText(f"Port: {port_str}")
         if port_str == "-":
-            self.port_label.setStyleSheet(
-                "background-color: #111827; color: #6b7280; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #1f2937;"
-            )
+            self.port_label.setStyleSheet(_chip_qss("#030509", "#5d646f", "#10141b"))
         else:
-            self.port_label.setStyleSheet(
-                "background-color: #0c4a6e; color: #38bdf8; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #0284c7;"
-            )
+            self.port_label.setStyleSheet(_chip_qss("#131921", "#979fab", "#232933"))
 
     def update_conn_mode(self, mode: str):
         self.conn_mode_label.setText(f"Mode: {mode}")
         lower_mode = mode.lower()
+        # Design maps each transport to a distinct accent, shown as accent-colored
+        # text on a neutral chip (see MODE_COLORS in the mock).
         if lower_mode == "udp":
-            self.conn_mode_label.setStyleSheet(
-                "background-color: #134e5e; color: #e0f7fa; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #00acc1;"
-            )
+            self.conn_mode_label.setStyleSheet(_chip_qss("#1a2029", "#2cb3b3", "#232933"))
         elif lower_mode == "tcp client":
-            self.conn_mode_label.setStyleSheet(
-                "background-color: #1e3a8a; color: #dbeafe; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #3b82f6;"
-            )
+            self.conn_mode_label.setStyleSheet(_chip_qss("#1a2029", "#4ba3f7", "#232933"))
         elif lower_mode == "tcp server":
-            self.conn_mode_label.setStyleSheet(
-                "background-color: #312e81; color: #e0e7ff; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #6366f1;"
-            )
+            self.conn_mode_label.setStyleSheet(_chip_qss("#1a2029", "#7e8ef4", "#232933"))
         elif lower_mode == "tcp proxy":
-            self.conn_mode_label.setStyleSheet(
-                "background-color: #4c1d95; color: #f3e8ff; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #8b5cf6;"
-            )
+            self.conn_mode_label.setStyleSheet(_chip_qss("#1a2029", "#ae7ee2", "#232933"))
         elif lower_mode == "serial":
-            self.conn_mode_label.setStyleSheet(
-                "background-color: #7c2d12; color: #ffedd5; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #f97316;"
-            )
+            self.conn_mode_label.setStyleSheet(_chip_qss("#1a2029", "#eb883b", "#232933"))
         else:
-            self.conn_mode_label.setStyleSheet(
-                "background-color: #1f2937; color: #9ca3af; border-radius: 6px; padding: 4px 10px; font-weight: bold; border: 1px solid #374151;"
-            )
+            self.conn_mode_label.setStyleSheet(_chip_qss("#151b24", "#6b727e", "#232933"))
 
     # ── Capture lifecycle ──────────────────────────────────────────────────
 
@@ -795,10 +1036,10 @@ class MainWindow(QMainWindow):
     def _show_send_feedback(self, ok: bool, error: str):
         if ok:
             self.send_feedback_label.setText("✓ Sent")
-            self.send_feedback_label.setStyleSheet("color: #34d399;")
+            self.send_feedback_label.setStyleSheet("color: #5dc879; font-weight: 600;")
         else:
             self.send_feedback_label.setText(f"✗ {error or 'Send failed'}")
-            self.send_feedback_label.setStyleSheet("color: #fca5a5;")
+            self.send_feedback_label.setStyleSheet("color: #ff645f; font-weight: 600;")
         QTimer.singleShot(4000, self.send_feedback_label.clear)
 
     def _set_capture_controls_running(self, running: bool):
@@ -1055,11 +1296,13 @@ class MainWindow(QMainWindow):
         self._error_count = 0
         self.event_count_label.setText("Events: 0")
         self.error_count_label.setText("Errors: 0")
+        self._update_filter_count()
 
     def _on_filter_changed(self):
         self.filter_proxy.set_direction_filter(self.filter_direction_combo.currentData())
         self.filter_proxy.set_type_filter(self.filter_type_combo.currentData())
         self.filter_proxy.set_text_filter(self.filter_text_edit.text())
+        self._update_filter_count()
 
     def on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
         indexes = selected.indexes()
@@ -1137,6 +1380,7 @@ class MainWindow(QMainWindow):
 
         events = [PacketEvent(e) for e in result.events]
         self.table_model.set_events(events)
+        self._update_filter_count()
 
         self.set_mode("offline")
         self.update_status("Status: offline log")
@@ -1161,9 +1405,11 @@ class MainWindow(QMainWindow):
         is_hex = self.hex_radio.isChecked()
         self.eol_combo.setEnabled(not is_hex)
         if is_hex:
-            self.send_input.setPlaceholderText("Enter hex bytes (e.g. AA BB CC 00)...")
+            self.send_input.setPlaceholderText("Enter hex bytes (e.g. AA BB CC 00)…")
         else:
-            self.send_input.setPlaceholderText("Type message to send...")
+            self.send_input.setPlaceholderText("Type message to send…")
+        if hasattr(self, "fmt_pills"):
+            self._restyle_pills(self.fmt_pills, 1 if is_hex else 0)
 
     def _clean_hex_input(self, text: str) -> str | None:
         clean_hex = re.sub(r'(0x|0X|[\s:\-])', '', text).lower()
@@ -1248,6 +1494,7 @@ class MainWindow(QMainWindow):
 
         self.decoder_combo.setCurrentIndex(state.decoder_index)
         self.decoder_param_stack.setCurrentIndex(state.decoder_index)
+        self.decoder_param_stack.setVisible(state.decoder_index != 0)
         self.dec_fixed_size.setValue(state.dec_fixed_size)
         self.dec_delim_edit.setText(state.dec_delim)
         self.dec_delim_inc_cb.setChecked(state.dec_delim_inc)
@@ -1263,6 +1510,9 @@ class MainWindow(QMainWindow):
         self.mode_help_label.setText(self._MODE_HELP_TEXT.get(self.mode_combo.currentText(), ""))
 
         self.update_config_preview()
+        # Sync accent + segmented pills to the loaded mode / send format, even when
+        # the index did not change (default UDP), so the pill selection is correct.
+        self._sync_mode_visuals()
 
     def save_settings(self):
         state = ViewerState(
@@ -1323,6 +1573,7 @@ class MainWindow(QMainWindow):
         elif mode == "Serial":
             self.log_file_edit.setText("serial.jsonl")
         self.update_config_preview()
+        self._sync_mode_visuals()
 
     def _collect_capture_config(self) -> dict:
         """Builds the "config" object for a "configure" command from the current
@@ -1406,6 +1657,8 @@ class MainWindow(QMainWindow):
 
     def on_decoder_changed(self, index: int):
         self.decoder_param_stack.setCurrentIndex(index)
+        # Raw (index 0) has no frame params - hide the inline param area.
+        self.decoder_param_stack.setVisible(index != 0)
         self.update_config_preview()
 
     def _build_settings_dialog(self):
@@ -1430,6 +1683,15 @@ class MainWindow(QMainWindow):
         preview_layout.addWidget(QLabel("Config Preview:", dialog))
         preview_layout.addWidget(self.config_preview_edit)
         layout.addLayout(preview_layout)
+
+        # Open Log lives here now that the menu bar has been removed to match the mock.
+        open_log_layout = QHBoxLayout()
+        open_log_layout.addWidget(QLabel("Offline Log:", dialog))
+        open_log_btn = QPushButton("Open Log File…", dialog)
+        open_log_btn.clicked.connect(lambda: (dialog.close(), self.open_log_file()))
+        open_log_layout.addWidget(open_log_btn)
+        open_log_layout.addStretch()
+        layout.addLayout(open_log_layout)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
         buttons.rejected.connect(dialog.close)

@@ -1,7 +1,55 @@
 from collections import deque
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QRect, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QStyle, QStyledItemDelegate
 from .event_model import PacketEvent, format_time_ns
+
+# Per-type text colors and TX/RX direction colors from the "Packet Probe
+# Viewer" design mock (sRGB of its oklch values).
+TYPE_COLORS = {
+    "raw_bytes": "#88909c",
+    "frame": "#1ad1d1",
+    "latency": "#e3ae28",
+    "error": "#f75d59",
+    "state_change": "#b386e4",
+}
+TX_COLOR = "#52a9fe"  # app_to_device
+RX_COLOR = "#4acaad"  # device_to_app
+
+
+class DirectionChipDelegate(QStyledItemDelegate):
+    """Renders the Direction column as a filled, rounded chip badge (App → Dev /
+    Dev → App), matching the design mock."""
+
+    def paint(self, painter, option, index):
+        text = index.data() or ""
+        if "APP -> DEVICE" in text:
+            color, label = QColor(TX_COLOR), "App → Dev"
+        elif "DEVICE -> APP" in text:
+            color, label = QColor(RX_COLOR), "Dev → App"
+        else:
+            super().paint(painter, option, index)
+            return
+
+        painter.save()
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+
+        painter.setFont(option.font)
+        fm = painter.fontMetrics()
+        chip_w = min(fm.horizontalAdvance(label) + 16, option.rect.width() - 12)
+        chip = QRect(option.rect.left() + 8, option.rect.center().y() - 9, chip_w, 18)
+
+        bg = QColor(color)
+        bg.setAlpha(48)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bg)
+        painter.setRenderHint(painter.RenderHint.Antialiasing, True)
+        painter.drawRoundedRect(chip, 4, 4)
+
+        painter.setPen(color)
+        painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, label)
+        painter.restore()
 
 class PacketTableModel(QAbstractTableModel):
     MAX_EVENTS = 100_000
@@ -23,14 +71,12 @@ class PacketTableModel(QAbstractTableModel):
             return None
 
         if role == Qt.ItemDataRole.ForegroundRole:
-            event = self.events[index.row()]
-            if event.type == "error":
-                return QColor("#fc8181")  # High-contrast bright red for dark theme
-            direction = event.direction
-            if direction == "app_to_device" or direction == "tx":
-                return QColor("#4fd1c5")  # High-contrast bright teal for dark theme
-            elif direction == "device_to_app" or direction == "rx":
-                return QColor("#ed8936")  # High-contrast bright orange for dark theme
+            # The Direction column (3) is painted as a chip by
+            # DirectionChipDelegate; the Type column (4) is colored per event
+            # type. Other columns keep the default foreground.
+            if index.column() == 4:
+                event = self.events[index.row()]
+                return QColor(TYPE_COLORS.get(event.type, "#88909c"))
             return None
 
         if role == Qt.ItemDataRole.DisplayRole:
