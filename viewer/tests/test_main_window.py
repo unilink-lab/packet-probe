@@ -62,6 +62,9 @@ def test_main_window_send_payload_conversion(qtbot):
             sent_commands.append(cmd)
             return cmd.get("id", "fake-id")
 
+        def stop(self):
+            pass
+
     window.worker = FakeWorker()
     window._ipc_connected = True
     window._engine_state = "capturing"
@@ -122,6 +125,9 @@ def test_main_window_send_requires_connected_capturing_engine(qtbot, monkeypatch
     class FakeWorker:
         def send_command(self, cmd):
             return cmd.get("id", "fake-id")
+
+        def stop(self):
+            pass
 
     window.worker = FakeWorker()
     window._ipc_connected = True
