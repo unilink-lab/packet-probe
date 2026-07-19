@@ -16,7 +16,7 @@ jobs:
       - name: Checkout unilink
         uses: actions/checkout@v4
         with:
-          repository: jwsung91/unilink
+          repository: wirestead/wirestead
           path: unilink
 
       - name: Install dependencies
