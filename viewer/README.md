@@ -12,19 +12,19 @@ require restarting the `packet-probe` process.
 
 ## Install
 
-The viewer depends on PySide6. Live IPC stream subscription also requires `unilink-python` to be installed.
+The viewer depends on PySide6. Live IPC stream subscription also requires `wirestead-python` to be installed.
 
-For local development with sibling repositories, we recommend a local install of `unilink-python`:
+For local development with sibling repositories, we recommend a local install of `wirestead-python`:
 
 ```sh
-python -m pip install -e ../unilink-python \
+python -m pip install -e ../wirestead-python \
   -Ccmake.define.UNILINK_CORE_SOURCE_DIR=../unilink
 
 cd viewer
 python -m pip install -e .
 ```
 
-*Note: In the final packaged standalone executable distributions, the `unilink-python` native extension will be bundled automatically.*
+*Note: In the final packaged standalone executable distributions, the `wirestead-python` native extension will be bundled automatically.*
 
 ## Run
 

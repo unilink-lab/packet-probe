@@ -16,9 +16,9 @@ redistributing the viewer.
 For source distributions from this repository, Packet Probe only includes viewer
 source code and dependency declarations.
 
-## unilink-python / unilink
+## wirestead-python / unilink
 
-The viewer uses unilink-python as its IPC transport dependency. unilink-python
+The viewer uses wirestead-python as its IPC transport dependency. wirestead-python
 binds the unilink C++ communication library and may include native extension
 modules and runtime libraries in packaged distributions.
 
