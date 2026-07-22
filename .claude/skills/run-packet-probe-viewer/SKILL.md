@@ -23,14 +23,14 @@ here.
 - Visual Studio 2022 Build Tools (MSVC) + CMake, for the C++ engine
 - vcpkg with Boost installed for `x64-windows` (the repo's `build/CMakeCache.txt`
   already points `CMAKE_TOOLCHAIN_FILE` at `<vcpkg-root>/scripts/buildsystems/vcpkg.cmake`)
-- The `unilink` Python bindings (native extension, package name `unilink`,
-  **not** `unilink-python`) - required for live IPC capture. Check:
+- The `wirestead` Python bindings (native extension, package name `wirestead`,
+  **not** `wirestead-python`) - required for live IPC capture. Check:
 
   ```bash
-  python -c "import unilink; print(unilink.__version__, unilink._core.__file__)"
+  python -c "import wirestead; print(wirestead.__version__, wirestead._core.__file__)"
   ```
 
-  If that fails, or `unilink` is older than the `unilink` core repo you're
+  If that fails, or `wirestead` is older than the `wirestead` core repo you're
   building `packet-probe` against, rebuild it from source (see Setup).
 
 ## Setup
@@ -40,26 +40,26 @@ cd viewer
 python -m pip install -e .
 ```
 
-If `unilink` needs building/rebuilding (native extension is stale or
-missing), it comes from a sibling repo (`unilink-python`, built against
-another sibling repo, the `unilink` C++ core - **not** the same as this
+If `wirestead` needs building/rebuilding (native extension is stale or
+missing), it comes from a sibling repo (`wirestead-python`, built against
+another sibling repo, the `wirestead` C++ core - **not** the same as this
 `packet-probe` repo's own `build/`). On this machine those live at
-`D:/GitHub/unilink-python` and `D:/GitHub/unilink-lab/unilink`; adjust paths
+`D:/GitHub/wirestead-python` and `D:/GitHub/wirestead`; adjust paths
 if your layout differs:
 
 ```bash
 python -m pip install scikit-build-core "pybind11>=2.11,<3" cmake ninja
-cd /d/GitHub/unilink-python
+cd /d/GitHub/wirestead-python
 rm -rf build/cp312-fresh
 python -m pip install -e . \
-  -Ccmake.define.UNILINK_CORE_SOURCE_DIR=/d/GitHub/unilink-lab/unilink \
+  -Ccmake.define.WIRESTEAD_CORE_SOURCE_DIR=/d/GitHub/wirestead \
   -Ccmake.define.CMAKE_TOOLCHAIN_FILE=C:/Users/jwsun/vcpkg/scripts/buildsystems/vcpkg.cmake \
   -Ccmake.define.VCPKG_MANIFEST_MODE=OFF \
   -Cbuild-dir=build/cp312-fresh \
   --no-build-isolation
 ```
 
-This is a full native rebuild (compiles the `unilink` C++ core + pybind11
+This is a full native rebuild (compiles the `wirestead` C++ core + pybind11
 bindings) - takes several minutes.
 
 ## Build
@@ -74,7 +74,7 @@ cmake --build build --config Debug --target packet-probe
 automatically):
 
 ```bash
-cp build/bin/unilink.dll build/Debug/unilink.dll
+cp build/bin/wirestead.dll build/Debug/wirestead.dll
 ```
 
 ## Run (agent path)
@@ -130,11 +130,11 @@ python -m pytest -q
   Makefiles/Ninja). MSVC is multi-config: the real binary is
   `build/Debug/packet-probe.exe`. Already fixed in this repo (commit
   `8004f5e`) to check `Debug/Release/RelWithDebInfo/MinSizeRel` with `.exe`.
-- **`unilink.dll` is not copied next to `packet-probe.exe` automatically** -
+- **`wirestead.dll` is not copied next to `packet-probe.exe` automatically** -
   it's a FetchContent'd subproject target, not a vcpkg package, so
   `VCPKG_APPLOCAL_DEPS` (which is ON in this repo) doesn't apply-local-copy
   it. Without the manual `cp` in Build, the exe fails immediately with
-  `error while loading shared libraries: unilink.dll`.
+  `error while loading shared libraries: wirestead.dll`.
 - **A stale `packet-probe.exe` silently lacks newer CLI modes** - an old
   Debug build ran fine but its `--help` had no `engine` mode at all (it
   predated that feature). If `packet-probe engine --ipc ...` says `unknown
@@ -145,12 +145,12 @@ python -m pytest -q
   socket) are silently dropped with no error anywhere. For a receive-any-source
   capture (matching `docs/validation/viewer-ipc.md`'s CLI-only flow), clear
   both fields - `driver.py`'s `udp-capture` scenario does this.
-- **`unilink` (Python bindings) version drift is invisible** - `pip show
-  unilink` can report a version/build that predates recent fixes in the
-  sibling `unilink` C++ core, with no automatic check tying them together.
+- **`wirestead` (Python bindings) version drift is invisible** - `pip show
+  wirestead` can report a version/build that predates recent fixes in the
+  sibling `wirestead` C++ core, with no automatic check tying them together.
   If IPC connects but behaves oddly (or doesn't connect at all against a
   freshly-rebuilt `packet-probe.exe`), compare
-  `python -c "import unilink,os;print(os.path.getmtime(unilink._core.__file__))"`
+  `python -c "import wirestead,os;print(os.path.getmtime(wirestead._core.__file__))"`
   against the core repo's `git log -1 --format=%cd`, and rebuild per Setup if
   the extension predates relevant core commits.
 - **git-bash silently reinterprets POSIX paths only in argv, not in embedded
@@ -165,16 +165,17 @@ python -m pytest -q
 
 ## Troubleshooting
 
-- **`error while loading shared libraries: unilink.dll`**: DLL not next to
-  the exe. `cp build/bin/unilink.dll build/Debug/unilink.dll`.
+- **`error while loading shared libraries: wirestead.dll`**: DLL not next to
+  the exe. `cp build/bin/wirestead.dll build/Debug/wirestead.dll`.
 - **`packet-probe: unknown or missing mode: engine`**: stale build.
   `cmake --build build --config Debug --target packet-probe`.
 - **CMake: `Could NOT find Boost (missing: Boost_INCLUDE_DIR system)`** while
-  building `unilink-python`: missing `-Ccmake.define.CMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`.
-- **CMake/vcpkg: `<vcpkg-root>\ports\jwsung91-unilink: error: jwsung91-unilink does not exist`**:
-  `unilink-python`'s `vcpkg.json` manifest references a private port/registry
-  not configured locally; build in classic mode instead:
-  `-Ccmake.define.VCPKG_MANIFEST_MODE=OFF`.
+  building `wirestead-python`: missing `-Ccmake.define.CMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`.
+- **CMake/vcpkg: `<vcpkg-root>\ports\wirestead: error: wirestead does not exist`**:
+  `wirestead-python`'s `vcpkg.json` manifest resolves the `wirestead` port
+  through the configured registry/baseline; if that lookup fails locally
+  (offline, stale baseline, private registry override), build in classic
+  mode instead: `-Ccmake.define.VCPKG_MANIFEST_MODE=OFF`.
 - **`driver.py udp-capture` reaches `capturing` but reports "no raw_bytes
   event"**: almost always the Target Host/Port gotcha above - confirm they're
   empty, not their form defaults.
