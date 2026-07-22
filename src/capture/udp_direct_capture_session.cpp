@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include "unilink/unilink.hpp"
+#include "wirestead/wirestead.hpp"
 
 namespace packet_probe {
 
@@ -22,7 +22,7 @@ std::string summary_for(Direction direction, std::size_t size) {
 }  // namespace
 
 struct UdpDirectCaptureSession::Impl {
-  std::unique_ptr<unilink::UdpClient> client;
+  std::unique_ptr<wirestead::UdpClient> client;
 };
 
 UdpDirectCaptureSession::UdpDirectCaptureSession(UdpDirectCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
@@ -43,7 +43,7 @@ void UdpDirectCaptureSession::start() {
     throw std::invalid_argument("udp requires both --target-host and --target-port when sending is enabled");
   }
 
-  unilink::config::UdpConfig config;
+  wirestead::config::UdpConfig config;
   config.bind_address = options_.bind_host;
   config.local_port = options_.bind_port;
   if (!options_.target_host.empty()) {
@@ -51,24 +51,24 @@ void UdpDirectCaptureSession::start() {
     config.remote_port = options_.target_port;
   }
 
-  impl_->client = std::make_unique<unilink::UdpClient>(config);
+  impl_->client = std::make_unique<wirestead::UdpClient>(config);
   stopped_.store(false);
-  impl_->client->on_data([this](unilink::MessageContext const& ctx) {
+  impl_->client->on_data([this](wirestead::MessageContext const& ctx) {
     auto payload = ctx.data_as_vector();
     auto source = ctx.client_info().empty() ? "udp-peer" : ctx.client_info();
     emit(make_event(Direction::DeviceToApp, EventType::RawBytes, std::move(payload), std::move(source),
                     endpoint(options_.bind_host, options_.bind_port), summary_for(Direction::DeviceToApp, ctx.data().size())));
   });
-  impl_->client->on_connect([this](unilink::ConnectionContext const&) {
+  impl_->client->on_connect([this](wirestead::ConnectionContext const&) {
     emit(make_event(Direction::DeviceToApp, EventType::StateChange, {}, endpoint(options_.bind_host, options_.bind_port),
                     "packet-probe", "udp listening " + endpoint(options_.bind_host, options_.bind_port)));
   });
-  impl_->client->on_disconnect([this](unilink::ConnectionContext const&) {
+  impl_->client->on_disconnect([this](wirestead::ConnectionContext const&) {
     emit(make_event(Direction::DeviceToApp, EventType::StateChange, {}, endpoint(options_.bind_host, options_.bind_port),
                     "packet-probe", "udp stopped " + endpoint(options_.bind_host, options_.bind_port)));
     stopped_.store(true);
   });
-  impl_->client->on_error([this](unilink::ErrorContext const& ctx) {
+  impl_->client->on_error([this](wirestead::ErrorContext const& ctx) {
     emit(make_event(Direction::DeviceToApp, EventType::Error, {}, endpoint(options_.bind_host, options_.bind_port),
                     "packet-probe", std::string(ctx.message())));
   });

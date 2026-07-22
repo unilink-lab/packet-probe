@@ -40,8 +40,8 @@ written as JSONL for later viewer support.
 
 ## Build
 
-By default, CMake looks for a sibling unilink source tree at `../unilink`.
-If that path does not exist, it falls back to `find_package(unilink CONFIG REQUIRED)`.
+By default, CMake looks for a sibling wirestead source tree at `../wirestead`.
+If that path does not exist, it falls back to `find_package(wirestead CONFIG REQUIRED)`.
 Packet Probe requires a C++20-capable compiler.
 
 ```sh
@@ -267,7 +267,7 @@ generated IPC socket.
 
 The IPC channel is bidirectional. The viewer can send a `send` command to
 transmit a hex payload to the connected device (tcp-client, tcp-server, serial,
-udp modes). Packet Probe IPC is implemented through the unilink UDS transport.
+udp modes). Packet Probe IPC is implemented through the wirestead UDS transport.
 
 See [viewer/README.md](viewer/README.md) for viewer installation and usage.
 

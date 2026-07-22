@@ -13,11 +13,11 @@ jobs:
       - name: Checkout Packet Probe
         uses: actions/checkout@v4
 
-      - name: Checkout unilink
+      - name: Checkout wirestead
         uses: actions/checkout@v4
         with:
           repository: wirestead/wirestead
-          path: unilink
+          path: wirestead
 
       - name: Install dependencies
         run: |
@@ -25,7 +25,7 @@ jobs:
           sudo apt-get install -y cmake g++ libboost-all-dev
 
       - name: Configure
-        run: cmake -S . -B build -DPACKET_PROBE_BUILD_TESTS=ON -DPACKET_PROBE_UNILINK_SOURCE_DIR="$GITHUB_WORKSPACE/unilink"
+        run: cmake -S . -B build -DPACKET_PROBE_BUILD_TESTS=ON -DPACKET_PROBE_WIRESTEAD_SOURCE_DIR="$GITHUB_WORKSPACE/wirestead"
 
       - name: Build
         run: cmake --build build -j2

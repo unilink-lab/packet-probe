@@ -1,5 +1,5 @@
 #include "ipc/ipc_event_server.hpp"
-#include "unilink/unilink.hpp"
+#include "wirestead/wirestead.hpp"
 
 #include <iostream>
 #include <chrono>
@@ -53,9 +53,9 @@ int main() {
   std::mutex mutex;
   std::vector<std::string> messages;
 
-  unilink::UdsClient client(options.socket_path);
-  client.framer(std::make_unique<unilink::framer::LineFramer>("\n", false, 65536));
-  client.on_message([&](unilink::MessageContext const& ctx) {
+  wirestead::UdsClient client(options.socket_path);
+  client.framer(std::make_unique<wirestead::framer::LineFramer>("\n", false, 65536));
+  client.on_message([&](wirestead::MessageContext const& ctx) {
     std::lock_guard<std::mutex> lock(mutex);
     std::cout << "Client received message: " << ctx.data() << std::endl;
     messages.emplace_back(ctx.data());

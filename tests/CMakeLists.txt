@@ -43,7 +43,7 @@ add_test(NAME test_ipc_protocol COMMAND test_ipc_protocol)
 
 add_executable(test_ipc_event_server test_ipc_event_server.cpp)
 target_include_directories(test_ipc_event_server PRIVATE "${PROJECT_SOURCE_DIR}/src")
-target_link_libraries(test_ipc_event_server PRIVATE packet_probe::core unilink::unilink)
+target_link_libraries(test_ipc_event_server PRIVATE packet_probe::core wirestead::wirestead)
 add_test(NAME test_ipc_event_server COMMAND test_ipc_event_server)
 
 add_executable(test_public_headers test_public_headers.cpp)
@@ -84,7 +84,7 @@ add_executable(
 )
 target_include_directories(test_engine_controller PRIVATE ../apps/packet-probe-cli)
 target_include_directories(test_engine_controller PRIVATE "${PROJECT_SOURCE_DIR}/src")
-target_link_libraries(test_engine_controller PRIVATE packet_probe::core packet_probe::capture unilink::unilink nlohmann_json::nlohmann_json)
+target_link_libraries(test_engine_controller PRIVATE packet_probe::core packet_probe::capture wirestead::wirestead nlohmann_json::nlohmann_json)
 add_test(NAME test_engine_controller COMMAND test_engine_controller)
 
 add_executable(test_tcp_server_capture_session test_tcp_server_capture_session.cpp)

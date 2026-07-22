@@ -10,7 +10,7 @@
 
 namespace packet_probe {
 
-// Mirrors unilink::ClientId without exposing unilink types in this public-ish header.
+// Mirrors wirestead::ClientId without exposing wirestead types in this public-ish header.
 using IpcClientId = std::uint64_t;
 
 struct IpcServerOptions {

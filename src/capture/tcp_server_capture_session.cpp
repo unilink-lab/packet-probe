@@ -7,14 +7,14 @@
 #include <stdexcept>
 #include <utility>
 
-#include "unilink/unilink.hpp"
+#include "wirestead/wirestead.hpp"
 
 namespace packet_probe {
 
 struct TcpServerCaptureSession::Impl {
-  std::unique_ptr<unilink::TcpServer> server;
+  std::unique_ptr<wirestead::TcpServer> server;
   std::mutex state_mutex;
-  std::optional<unilink::ClientId> active_client;
+  std::optional<wirestead::ClientId> active_client;
   std::string client_info;
 };
 
@@ -33,16 +33,16 @@ void TcpServerCaptureSession::start() {
     throw std::invalid_argument("tcp-server requires --listen-port");
   }
 
-  impl_->server = std::make_unique<unilink::TcpServer>(options_.listen_port);
+  impl_->server = std::make_unique<wirestead::TcpServer>(options_.listen_port);
   impl_->server->bind_address(options_.listen_host)
       .max_clients(1)
-      // Tuning unilink to minimize latency & bufferbloat per global instructions
+      // Tuning wirestead to minimize latency & bufferbloat per global instructions
       .backpressure_threshold(512 * 1024)
       .auto_start(false);
 
   stopped_.store(false);
 
-  impl_->server->on_connect([this](unilink::ConnectionContext const& ctx) {
+  impl_->server->on_connect([this](wirestead::ConnectionContext const& ctx) {
     bool has_active = false;
     {
       std::lock_guard<std::mutex> lock(impl_->state_mutex);
@@ -67,7 +67,7 @@ void TcpServerCaptureSession::start() {
                     ctx.client_info(), local_ep, std::move(summary)));
   });
 
-  impl_->server->on_disconnect([this](unilink::ConnectionContext const& ctx) {
+  impl_->server->on_disconnect([this](wirestead::ConnectionContext const& ctx) {
     std::string old_client_info;
     bool is_active = false;
     {
@@ -89,7 +89,7 @@ void TcpServerCaptureSession::start() {
     }
   });
 
-  impl_->server->on_data([this](unilink::MessageContext const& ctx) {
+  impl_->server->on_data([this](wirestead::MessageContext const& ctx) {
     bool is_active = false;
     std::string client_info;
     {
@@ -110,7 +110,7 @@ void TcpServerCaptureSession::start() {
     }
   });
 
-  impl_->server->on_error([this](unilink::ErrorContext const& ctx) {
+  impl_->server->on_error([this](wirestead::ErrorContext const& ctx) {
     std::string target_client_info;
     bool is_active = false;
     {
@@ -152,7 +152,7 @@ void TcpServerCaptureSession::stop() {
 bool TcpServerCaptureSession::stopped() const { return stopped_.load(); }
 
 bool TcpServerCaptureSession::send(std::vector<std::uint8_t> payload) {
-  unilink::ClientId client_id;
+  wirestead::ClientId client_id;
   std::string client_info;
 
   {
