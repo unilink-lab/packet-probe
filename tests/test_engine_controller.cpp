@@ -1,6 +1,6 @@
 #include "engine_controller.hpp"
 
-#include "unilink/unilink.hpp"
+#include "wirestead/wirestead.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -58,9 +58,9 @@ int main() {
   std::mutex mutex;
   std::vector<nlohmann::json> messages;
 
-  unilink::UdsClient client(server_options.socket_path);
-  client.framer(std::make_unique<unilink::framer::LineFramer>("\n", false, 65536));
-  client.on_message([&](unilink::MessageContext const& ctx) {
+  wirestead::UdsClient client(server_options.socket_path);
+  client.framer(std::make_unique<wirestead::framer::LineFramer>("\n", false, 65536));
+  client.on_message([&](wirestead::MessageContext const& ctx) {
     std::lock_guard<std::mutex> lock(mutex);
     messages.push_back(nlohmann::json::parse(std::string(ctx.data())));
   });
@@ -130,12 +130,12 @@ int main() {
   // guaranteed even on loopback, so retry sending until the event shows up instead of
   // trusting a single datagram under parallel test-suite load.
   {
-    unilink::config::UdpConfig udp_cfg;
+    wirestead::config::UdpConfig udp_cfg;
     udp_cfg.bind_address = "0.0.0.0";
     udp_cfg.local_port = 0;
     udp_cfg.remote_address = "127.0.0.1";
     udp_cfg.remote_port = 19412;
-    unilink::UdpClient sender(udp_cfg);
+    wirestead::UdpClient sender(udp_cfg);
     TEST_ASSERT(sender.start_sync(), "udp sender should start");
 
     std::cerr << "[waiting] raw_bytes ping event" << std::endl;

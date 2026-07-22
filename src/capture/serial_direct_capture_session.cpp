@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include "unilink/unilink.hpp"
+#include "wirestead/wirestead.hpp"
 
 namespace packet_probe {
 
@@ -19,7 +19,7 @@ std::string summary_for(Direction direction, std::size_t size) {
 }  // namespace
 
 struct SerialDirectCaptureSession::Impl {
-  std::unique_ptr<unilink::Serial> serial;
+  std::unique_ptr<wirestead::Serial> serial;
 };
 
 SerialDirectCaptureSession::SerialDirectCaptureSession(SerialCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
@@ -42,28 +42,28 @@ void SerialDirectCaptureSession::start() {
   }
 #endif
 
-  impl_->serial = std::make_unique<unilink::Serial>(options_.port, options_.baudrate);
+  impl_->serial = std::make_unique<wirestead::Serial>(options_.port, options_.baudrate);
   impl_->serial->data_bits(options_.data_bits)
       .stop_bits(options_.stop_bits)
       .parity(to_string(options_.parity))
       .flow_control(to_string(options_.flow_control));
 
   stopped_.store(false);
-  impl_->serial->on_data([this](unilink::MessageContext const& ctx) {
+  impl_->serial->on_data([this](wirestead::MessageContext const& ctx) {
     auto payload = ctx.data_as_vector();
     emit(make_event(Direction::DeviceToApp, EventType::RawBytes, std::move(payload), options_.port, "packet-probe",
                     summary_for(Direction::DeviceToApp, ctx.data().size())));
   });
-  impl_->serial->on_connect([this](unilink::ConnectionContext const&) {
+  impl_->serial->on_connect([this](wirestead::ConnectionContext const&) {
     emit(make_event(Direction::DeviceToApp, EventType::StateChange, {}, options_.port, "packet-probe",
                     "serial connected " + options_.port));
   });
-  impl_->serial->on_disconnect([this](unilink::ConnectionContext const&) {
+  impl_->serial->on_disconnect([this](wirestead::ConnectionContext const&) {
     emit(make_event(Direction::DeviceToApp, EventType::StateChange, {}, options_.port, "packet-probe",
                     "serial disconnected " + options_.port));
     stopped_.store(true);
   });
-  impl_->serial->on_error([this](unilink::ErrorContext const& ctx) {
+  impl_->serial->on_error([this](wirestead::ErrorContext const& ctx) {
     emit(make_event(Direction::DeviceToApp, EventType::Error, {}, options_.port, "packet-probe",
                     std::string(ctx.message())));
     stopped_.store(true);

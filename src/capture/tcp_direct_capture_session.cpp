@@ -5,12 +5,12 @@
 #include <stdexcept>
 #include <utility>
 
-#include "unilink/unilink.hpp"
+#include "wirestead/wirestead.hpp"
 
 namespace packet_probe {
 
 struct TcpDirectCaptureSession::Impl {
-  std::unique_ptr<unilink::TcpClient> client;
+  std::unique_ptr<wirestead::TcpClient> client;
 };
 
 TcpDirectCaptureSession::TcpDirectCaptureSession(TcpDirectCaptureOptions options, EventCallback on_event, SharedSequenceAllocator seq_alloc)
@@ -28,17 +28,17 @@ void TcpDirectCaptureSession::start() {
     throw std::invalid_argument("tcp-client requires --port");
   }
 
-  impl_->client = std::make_unique<unilink::TcpClient>(options_.host, options_.port);
+  impl_->client = std::make_unique<wirestead::TcpClient>(options_.host, options_.port);
   impl_->client->max_retries(0).connection_timeout(std::chrono::milliseconds(2000));
   stopped_.store(false);
-  impl_->client->on_data([this](unilink::MessageContext const& ctx) {
+  impl_->client->on_data([this](wirestead::MessageContext const& ctx) {
     auto payload = ctx.data_as_vector();
     auto remote_ep = options_.host + ":" + std::to_string(options_.port);
     emit(make_event(Direction::DeviceToApp, EventType::RawBytes, std::move(payload),
                     remote_ep, "packet-probe",
                     "RX " + std::to_string(ctx.data().size()) + " bytes"));
   });
-  impl_->client->on_connect([this](unilink::ConnectionContext const& ctx) {
+  impl_->client->on_connect([this](wirestead::ConnectionContext const& ctx) {
     auto summary = std::string("connected");
     if (!ctx.client_info().empty()) {
       summary += " " + ctx.client_info();
@@ -47,7 +47,7 @@ void TcpDirectCaptureSession::start() {
     emit(make_event(Direction::DeviceToApp, EventType::StateChange, {},
                     remote_ep, "packet-probe", std::move(summary)));
   });
-  impl_->client->on_disconnect([this](unilink::ConnectionContext const& ctx) {
+  impl_->client->on_disconnect([this](wirestead::ConnectionContext const& ctx) {
     auto summary = std::string("disconnected");
     if (!ctx.client_info().empty()) {
       summary += " " + ctx.client_info();
@@ -57,7 +57,7 @@ void TcpDirectCaptureSession::start() {
                     remote_ep, "packet-probe", std::move(summary)));
     stopped_.store(true);
   });
-  impl_->client->on_error([this](unilink::ErrorContext const& ctx) {
+  impl_->client->on_error([this](wirestead::ErrorContext const& ctx) {
     auto remote_ep = options_.host + ":" + std::to_string(options_.port);
     emit(make_event(Direction::DeviceToApp, EventType::Error, {},
                     remote_ep, "packet-probe", std::string(ctx.message())));

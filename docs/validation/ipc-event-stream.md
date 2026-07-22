@@ -37,7 +37,7 @@ packet-probe udp `
 
 ## Windows Note
 
-IPC is implemented through the unilink UDS transport. On Windows, use a short socket path in a writable local directory when validating packaged or command-line builds.
+IPC is implemented through the wirestead UDS transport. On Windows, use a short socket path in a writable local directory when validating packaged or command-line builds.
 
 ## Connect A Viewer Client
 
@@ -91,4 +91,4 @@ continue capturing while clients disconnect and reconnect.
   not a directory or regular file.
 - If no event arrives, confirm traffic is sent to the configured bind host and
   bind port.
-- UDS IPC platform support follows the underlying unilink core and OS UDS/AF_UNIX support.
+- UDS IPC platform support follows the underlying wirestead core and OS UDS/AF_UNIX support.
