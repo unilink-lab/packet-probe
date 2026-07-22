@@ -9,7 +9,7 @@ and display events.
 
 - Python 3.10+
 - PySide6
-- wirestead-python (with unilink core runtime libraries)
+- wirestead-python (with wirestead core runtime libraries)
 - Built `packet-probe`
 
 Packet Probe Viewer uses `wirestead-python` `UdsClient` for live IPC connections.

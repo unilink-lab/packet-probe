@@ -852,7 +852,7 @@ class MainWindow(QMainWindow):
         self.worker.result_received.connect(self.on_result_received)
         self.worker.status_received.connect(self.on_status_received)
         self.worker.disconnected.connect(self.on_worker_finished)
-        self.worker.unilink_unavailable.connect(self.on_unilink_unavailable)
+        self.worker.wirestead_unavailable.connect(self.on_wirestead_unavailable)
         self.worker.start()
 
     def disconnect_socket(self):
@@ -917,7 +917,7 @@ class MainWindow(QMainWindow):
         self._error_count += 1
         self.error_count_label.setText(f"Errors: {self._error_count}")
 
-    def on_unilink_unavailable(self, message: str):
+    def on_wirestead_unavailable(self, message: str):
         # Unlike a transient IPC error, this never resolves on its own: the CLI process
         # (if any) keeps running, but the live event table will stay empty for the rest
         # of this session. Make that permanent, non-retryable state hard to miss.
@@ -929,11 +929,11 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(
             self,
             "Live View Unavailable",
-            "unilink-python is not installed or failed to import, so the viewer cannot "
+            "wirestead-python is not installed or failed to import, so the viewer cannot "
             "subscribe to the live IPC event stream:\n\n"
             f"{message}\n\n"
             "The CLI process (if running) is unaffected and will keep capturing/recording, "
-            "but no events will appear in this table until unilink-python is installed and "
+            "but no events will appear in this table until wirestead-python is installed and "
             "the viewer reconnects."
         )
 

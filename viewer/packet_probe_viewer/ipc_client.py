@@ -4,10 +4,10 @@ import threading
 from PySide6.QtCore import QThread, Signal, QObject
 
 try:
-    import unilink
+    import wirestead
 except ImportError as exc:
-    unilink = None
-    _UNILINK_IMPORT_ERROR = exc
+    wirestead = None
+    _WIRESTEAD_IMPORT_ERROR = exc
 
 # Message types the engine's control protocol v2 uses for command acks/broadcasts
 # (see docs/ipc-protocol.md, "Control Protocol v2"). Everything else on the wire
@@ -24,7 +24,7 @@ class IpcClientWorker(QThread):
     status_changed = Signal(str)
     error_occurred = Signal(str)
     disconnected = Signal()
-    unilink_unavailable = Signal(str)
+    wirestead_unavailable = Signal(str)
 
     def __init__(self, socket_path: str, parent: QObject | None = None):
         super().__init__(parent)
@@ -35,12 +35,12 @@ class IpcClientWorker(QThread):
         self._next_command_id = itertools.count(1)
 
     def run(self):
-        if unilink is None:
+        if wirestead is None:
             # Unlike a transient IPC error, this can never resolve itself on retry -
             # surface it through a dedicated signal so the UI can treat it differently.
-            self.unilink_unavailable.emit(
-                f"unilink-python is not installed or failed to import: {_UNILINK_IMPORT_ERROR}. "
-                "Install viewer dependencies and ensure unilink runtime libraries are available."
+            self.wirestead_unavailable.emit(
+                f"wirestead-python is not installed or failed to import: {_WIRESTEAD_IMPORT_ERROR}. "
+                "Install viewer dependencies and ensure wirestead runtime libraries are available."
             )
             self.status_changed.emit("disconnected")
             self.disconnected.emit()
@@ -50,7 +50,7 @@ class IpcClientWorker(QThread):
         self.status_changed.emit("connecting")
 
         try:
-            client = unilink.UdsClient(self.socket_path)
+            client = wirestead.UdsClient(self.socket_path)
             client.auto_start(False)
             client.use_line_framer("\n", False, 65536)
             client.on_connect(self._on_connect)

@@ -18,7 +18,7 @@ For local development with sibling repositories, we recommend a local install of
 
 ```sh
 python -m pip install -e ../wirestead-python \
-  -Ccmake.define.UNILINK_CORE_SOURCE_DIR=../unilink
+  -Ccmake.define.WIRESTEAD_CORE_SOURCE_DIR=../wirestead
 
 cd viewer
 python -m pip install -e .
